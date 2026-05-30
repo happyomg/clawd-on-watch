@@ -69,7 +69,7 @@ class WatchSidecarClient {
       this.started = false;
       this.transport.connected = false;
       this.transport.secure = false;
-      this.log("info", `bridge exited code=${code} signal=${signal}`);
+      this.log("info", `sidecar exited code=${code} signal=${signal}`);
       this.onTransportStateChanged({ connected: false, previous: { connected: true } });
     });
 
