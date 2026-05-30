@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
 import android.view.View
@@ -30,6 +31,7 @@ class PairingActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "PairingActivity"
         private const val REQ_PERMS = 1
+        private const val REQ_NOTIFICATION = 2
     }
 
     private lateinit var statusText: TextView
@@ -122,7 +124,34 @@ class PairingActivity : AppCompatActivity() {
             requestPermissions()
             return
         }
+        if (!isNotificationEnabled()) {
+            statusText.text = "Please enable notifications\nfor Clawd"
+            try {
+                val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                    putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                }
+                @Suppress("DEPRECATION")
+                startActivityForResult(intent, REQ_NOTIFICATION)
+            } catch (e: Exception) {
+                Log.w(TAG, "Notification settings unavailable: ${e.message}")
+                startServiceAndBind()
+            }
+            return
+        }
         startServiceAndBind()
+    }
+
+    private fun isNotificationEnabled(): Boolean {
+        val mgr = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        return mgr.areNotificationsEnabled()
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_NOTIFICATION) {
+            startServiceAndBind()
+        }
     }
 
     private fun requiredPermissions(): Array<String> =
@@ -149,8 +178,7 @@ class PairingActivity : AppCompatActivity() {
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQ_PERMS && grantResults.isNotEmpty() &&
-            grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+        if (requestCode == REQ_PERMS && grantResults.all { it == PackageManager.PERMISSION_GRANTED }
         ) {
             checkAndRequestPermissions()
         } else {
