@@ -25,7 +25,16 @@ import json
 import sys
 import argparse
 
-from bleak import BleakClient, BleakScanner
+try:
+    from bleak import BleakClient, BleakScanner
+except ImportError:
+    sys.stdout.write(json.dumps({
+        "type": "error",
+        "code": "MISSING_BLEAK",
+        "message": "Python 'bleak' package is not installed. Run: pip install bleak",
+    }) + "\n")
+    sys.stdout.flush()
+    sys.exit(1)
 
 CWD_SERVICE = "00000cd0-0000-1000-8000-00805f9b34fb"
 CWD1_STATE = "00000cd1-0000-1000-8000-00805f9b34fb"
@@ -131,6 +140,18 @@ async def run(args):
         if not client or not client.is_connected:
             await schedule_reconnect()
 
+    async def force_disconnect():
+        nonlocal client
+        if client:
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
+            client = None
+            emit_status(False)
+            if not stopping:
+                await schedule_reconnect()
+
     def on_disconnect(_client):
         nonlocal client
         client = None
@@ -202,9 +223,20 @@ async def run(args):
     if not client or not client.is_connected:
         await schedule_reconnect()
 
-    # Main loop: read stdin commands
+    # Main loop: read stdin commands, with periodic health check
     while True:
-        msg = await stdin_queue.get()
+        try:
+            msg = await asyncio.wait_for(stdin_queue.get(), timeout=15.0)
+        except asyncio.TimeoutError:
+            if client and client.is_connected and last_snapshot_data is not None:
+                try:
+                    await client.write_gatt_char(CWD1_STATE, last_snapshot_data)
+                except Exception:
+                    await force_disconnect()
+            elif not client or not client.is_connected:
+                if not reconnect_task and not stopping:
+                    await schedule_reconnect()
+            continue
         if msg is None:
             break
 
@@ -219,6 +251,7 @@ async def run(args):
                     await client.write_gatt_char(CWD1_STATE, last_snapshot_data)
                 except Exception as e:
                     emit_error("WRITE_FAILED", str(e))
+                    await force_disconnect()
 
         elif msg_type == "approval_request":
             if client and client.is_connected:
@@ -228,6 +261,7 @@ async def run(args):
                     await client.write_gatt_char(CWD2_APPROVAL_REQ, data.encode("utf-8"))
                 except Exception as e:
                     emit_error("WRITE_FAILED", str(e))
+                    await force_disconnect()
 
         elif msg_type == "connect":
             addr = msg.get("address", "")

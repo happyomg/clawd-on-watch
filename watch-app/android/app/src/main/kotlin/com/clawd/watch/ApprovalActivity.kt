@@ -81,12 +81,15 @@ class ApprovalActivity : AppCompatActivity() {
             gestureHint.text = "Flick wrist to allow / Shake to deny"
         }
 
+        val timeoutMs = intent.getLongExtra("timeoutMs", 0L)
         val expiresAt = intent.getLongExtra("expiresAt", 0L)
-        if (expiresAt > 0) {
-            val delay = expiresAt - System.currentTimeMillis()
-            if (delay > 0) {
-                handler.postDelayed({ onTimeout() }, delay)
-            }
+        val delay = when {
+            timeoutMs > 0 -> timeoutMs
+            expiresAt > 0 -> expiresAt - System.currentTimeMillis()
+            else -> 0L
+        }
+        if (delay > 0) {
+            handler.postDelayed({ onTimeout() }, delay)
         }
     }
 

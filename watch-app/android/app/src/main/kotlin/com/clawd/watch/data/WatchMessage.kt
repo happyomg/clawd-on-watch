@@ -20,6 +20,7 @@ sealed class WatchMessage {
         val tool: String,
         val command: String,
         val risk: String,
+        val timeoutMs: Long?,
         val expiresAt: Long?
     ) : WatchMessage()
 
@@ -42,6 +43,7 @@ sealed class WatchMessage {
                     tool = json.optString("tool", ""),
                     command = json.optString("command", ""),
                     risk = json.optString("risk", "medium"),
+                    timeoutMs = if (json.has("timeoutMs")) json.getLong("timeoutMs") else null,
                     expiresAt = if (json.has("expiresAt")) json.getLong("expiresAt") else null
                 )
                 else -> null

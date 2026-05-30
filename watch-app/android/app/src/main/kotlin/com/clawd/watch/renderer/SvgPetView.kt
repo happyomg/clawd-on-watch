@@ -94,6 +94,9 @@ class SvgPetView @JvmOverloads constructor(
         }
     }
 
+    private fun escapeJs(s: String): String =
+        s.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "\\r")
+
     private fun updateSvg() {
         if (!loaded) return
         val svg = ThemeConfig.resolveSvg(state, activeSessionCount, displayHint)
@@ -101,7 +104,7 @@ class SvgPetView @JvmOverloads constructor(
         currentSvg = svg
 
         if (webViewAvailable) {
-            webView?.evaluateJavascript("setSvg('$svg')", null)
+            webView?.evaluateJavascript("setSvg('${escapeJs(svg)}')", null)
         } else {
             fallbackLabel?.text = "${state.name}\n$svg"
         }
@@ -111,7 +114,7 @@ class SvgPetView @JvmOverloads constructor(
         if (!loaded) return
         currentSvg = filename
         if (webViewAvailable) {
-            webView?.evaluateJavascript("setSvgImmediate('$filename')", null)
+            webView?.evaluateJavascript("setSvgImmediate('${escapeJs(filename)}')", null)
         } else {
             fallbackLabel?.text = filename
         }

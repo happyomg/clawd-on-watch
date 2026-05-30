@@ -1,5 +1,6 @@
 package com.clawd.watch.service
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
@@ -20,6 +21,7 @@ import android.bluetooth.le.AdvertiseSettings
 import android.bluetooth.le.BluetoothLeAdvertiser
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Binder
 import android.os.Build
 import android.os.Handler
@@ -48,7 +50,6 @@ import java.util.UUID
  *   Watch updates CWD3 → desktop reads (or watch notifies) approval response
  *   Desktop (Central) reads CWD4 → watch serves connection meta
  */
-@SuppressLint("MissingPermission")
 class BleService : Service() {
 
     companion object {
@@ -83,6 +84,15 @@ class BleService : Service() {
     private var advertiser: BluetoothLeAdvertiser? = null
     private var connectedDevice: BluetoothDevice? = null
     private var isAdvertising = false
+
+    private fun hasBlePermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            checkSelfPermission(Manifest.permission.BLUETOOTH_ADVERTISE) == PackageManager.PERMISSION_GRANTED &&
+                checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+        } else {
+            true
+        }
+    }
 
     private lateinit var powerManager: PowerManager
     private val handler = Handler(Looper.getMainLooper())
@@ -157,7 +167,12 @@ class BleService : Service() {
 
     // ── GATT Server ──
 
+    @SuppressLint("MissingPermission")
     private fun startGattServer() {
+        if (!hasBlePermission()) {
+            Log.e(TAG, "BLE permissions revoked — cannot start GATT server")
+            return
+        }
         gattServer?.close()
         gattServer = null
         val manager = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
@@ -351,8 +366,13 @@ class BleService : Service() {
 
     // ── Advertising ──
 
+    @SuppressLint("MissingPermission")
     private fun startAdvertising() {
         if (isAdvertising) return
+        if (!hasBlePermission()) {
+            Log.e(TAG, "BLE permissions revoked — cannot start advertising")
+            return
+        }
         val manager = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
         advertiser = manager.adapter?.bluetoothLeAdvertiser ?: run {
             Log.e(TAG, "BLE advertising not supported")
@@ -374,6 +394,7 @@ class BleService : Service() {
         advertiser?.startAdvertising(settings, data, advertiseCallback)
     }
 
+    @SuppressLint("MissingPermission")
     private fun stopAdvertising() {
         if (!isAdvertising) return
         advertiser?.stopAdvertising(advertiseCallback)
@@ -435,7 +456,7 @@ class BleService : Service() {
     private fun bringToForeground() {
         val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
         val wl = pm.newWakeLock(
-            android.os.PowerManager.FULL_WAKE_LOCK
+            android.os.PowerManager.SCREEN_BRIGHT_WAKE_LOCK
                 or android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP
                 or android.os.PowerManager.ON_AFTER_RELEASE,
             "clawd:state-change"
@@ -457,6 +478,7 @@ class BleService : Service() {
                 tool = json.optString("tool", ""),
                 command = json.optString("command", ""),
                 risk = json.optString("risk", "medium"),
+                timeoutMs = if (json.has("timeoutMs")) json.getLong("timeoutMs") else null,
                 expiresAt = if (json.has("expiresAt")) json.getLong("expiresAt") else null
             )
             handler.post { dispatchApproval(msg) }
@@ -467,6 +489,7 @@ class BleService : Service() {
 
     // ── Outgoing ──
 
+    @SuppressLint("MissingPermission")
     fun sendApprovalResponse(response: ApprovalResponse) {
         val server = gattServer ?: return
         val device = connectedDevice ?: return
@@ -495,6 +518,7 @@ class BleService : Service() {
             putExtra("tool", msg.tool)
             putExtra("risk", msg.risk)
             putExtra("sessionId", msg.sessionId)
+            msg.timeoutMs?.let { putExtra("timeoutMs", it) }
             msg.expiresAt?.let { putExtra("expiresAt", it) }
         }
         startActivity(intent)
