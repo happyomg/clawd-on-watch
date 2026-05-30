@@ -103,6 +103,8 @@ scripts/*
 !scripts/verify-sidecar-binaries.js
 !scripts/fetch-sidecar-binaries.js
 !scripts/watch_buddy_bridge.py
+!scripts/requirements-watch.txt
+!scripts/sync-watch-svgs.sh
 
 # oh-my-cursor state
 .omc/
