@@ -49,6 +49,11 @@ class MainActivity : AppCompatActivity() {
             service.onPowerModeChanged = { mode ->
                 runOnUiThread { handlePowerModeChange(mode) }
             }
+            val cached = service.getLastState()
+            if (cached != null) {
+                runOnUiThread { handleCompactState(cached) }
+            }
+            runOnUiThread { updateConnectionState(service.isConnected()) }
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {

@@ -100,6 +100,10 @@ class BleService : Service() {
     var onConnectionStateChanged: ((Boolean) -> Unit)? = null
     var onPowerModeChanged: ((PowerManager.PowerMode) -> Unit)? = null
 
+    private var lastCompactState: WatchMessage.CompactState? = null
+
+    fun getLastState(): WatchMessage.CompactState? = lastCompactState
+
     fun isConnected(): Boolean = connectedDevice != null
 
     inner class LocalBinder : Binder() {
@@ -394,6 +398,7 @@ class BleService : Service() {
         try {
             val msg = WatchMessage.parse(JSONObject(text))
             if (msg != null) {
+                if (msg is WatchMessage.CompactState) lastCompactState = msg
                 handler.post { onWatchMessage?.invoke(msg) }
             }
         } catch (e: Exception) {
