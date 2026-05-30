@@ -24,6 +24,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Binder
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -565,12 +566,17 @@ class BleService : Service() {
             this, 0, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        val extras = Bundle().apply {
+            putBoolean("show_heytap_indicator", true)
+        }
         return Notification.Builder(this, CHANNEL_ID)
             .setContentTitle("Clawd")
             .setContentText(status)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
+            .setCategory(Notification.CATEGORY_NAVIGATION)
+            .addExtras(extras)
             .build()
     }
 
