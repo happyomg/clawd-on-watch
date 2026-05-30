@@ -5,9 +5,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
 import android.view.View
@@ -30,6 +32,7 @@ class PairingActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "PairingActivity"
         private const val REQ_PERMS = 1
+        private const val REQ_OVERLAY = 2
     }
 
     private lateinit var statusText: TextView
@@ -75,11 +78,7 @@ class PairingActivity : AppCompatActivity() {
 
         setContentView(buildUi())
 
-        if (hasPermissions()) {
-            startServiceAndBind()
-        } else {
-            requestPermissions()
-        }
+        checkAndRequestPermissions()
     }
 
     override fun onDestroy() {
@@ -121,6 +120,36 @@ class PairingActivity : AppCompatActivity() {
         return root
     }
 
+    private fun checkAndRequestPermissions() {
+        if (!hasPermissions()) {
+            requestPermissions()
+            return
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+            statusText.text = "Please enable\n\"Display over other apps\"\nfor Clawd"
+            val intent = Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:$packageName")
+            )
+            startActivityForResult(intent, REQ_OVERLAY)
+            return
+        }
+        startServiceAndBind()
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_OVERLAY) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && Settings.canDrawOverlays(this)) {
+                startServiceAndBind()
+            } else {
+                statusText.text = "Overlay permission required\nfor wake-on-state-change"
+                startServiceAndBind()
+            }
+        }
+    }
+
     private fun requiredPermissions(): Array<String> =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             arrayOf(
@@ -148,7 +177,7 @@ class PairingActivity : AppCompatActivity() {
         if (requestCode == REQ_PERMS && grantResults.isNotEmpty() &&
             grantResults.all { it == PackageManager.PERMISSION_GRANTED }
         ) {
-            startServiceAndBind()
+            checkAndRequestPermissions()
         } else {
             statusText.text = "Bluetooth permission required"
         }
