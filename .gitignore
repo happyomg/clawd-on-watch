@@ -108,3 +108,13 @@ scripts/*
 
 # Cursor local config (MCP, rules from omc setup)
 .cursor/
+
+# JetBrains IDE
+.idea/
+
+# Android / Gradle build artifacts
+watch-app/**/build/
+watch-app/**/.gradle/
+*.apk
+*.aab
+local.properties
