@@ -101,11 +101,9 @@ class BleService : Service() {
     // Characteristic references for sending notifications
     private var charApprovalResp: BluetoothGattCharacteristic? = null
 
-    // Track which devices have subscribed to notifications on CWD3
-    private val cwd3Subscribers = mutableSetOf<String>()
-
-    // Buffer for Prepared Write (long write) operations
-    private val preparedWriteBuffer = mutableMapOf<Int, ByteArray>()
+    // Thread-safe: accessed from GATT Binder threads and main thread
+    private val cwd3Subscribers = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    private val preparedWriteBuffer = java.util.Collections.synchronizedMap(mutableMapOf<Int, ByteArray>())
 
     var onWatchMessage: ((WatchMessage) -> Unit)? = null
     var onConnectionStateChanged: ((Boolean) -> Unit)? = null

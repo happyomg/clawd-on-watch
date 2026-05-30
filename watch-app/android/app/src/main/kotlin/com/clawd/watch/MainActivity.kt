@@ -111,7 +111,7 @@ class MainActivity : AppCompatActivity() {
             android.os.PowerManager.SCREEN_BRIGHT_WAKE_LOCK or android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP,
             "clawd:screen-on"
         )
-        wakeLock?.acquire()
+        wakeLock?.acquire(30 * 60 * 1000L)
     }
 
     override fun onPause() {

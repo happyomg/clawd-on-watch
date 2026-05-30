@@ -16,6 +16,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.clawd.watch.data.ApprovalResponse
+import com.clawd.watch.gesture.FlickDetector
 import com.clawd.watch.service.BleService
 
 class ApprovalActivity : AppCompatActivity() {
@@ -24,6 +25,8 @@ class ApprovalActivity : AppCompatActivity() {
     private var bound = false
     private val handler = Handler(Looper.getMainLooper())
     private var responded = false
+    private var flickDetector: FlickDetector? = null
+    private var requestId: String? = null
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -40,13 +43,12 @@ class ApprovalActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val requestId = intent.getStringExtra("requestId") ?: run { finish(); return }
+        requestId = intent.getStringExtra("requestId") ?: run { finish(); return }
         val command = intent.getStringExtra("command") ?: "Unknown command"
         val tool = intent.getStringExtra("tool") ?: ""
         val risk = intent.getStringExtra("risk") ?: "medium"
 
         vibrate(risk)
-
         setContentView(R.layout.activity_approval)
 
         val riskColor = when (risk) {
@@ -59,27 +61,38 @@ class ApprovalActivity : AppCompatActivity() {
             text = "RISK: ${risk.uppercase()}"
             setTextColor(riskColor)
         }
-
         findViewById<TextView>(R.id.tool_label).text = "Tool: $tool"
         findViewById<TextView>(R.id.command_text).text = command
 
         findViewById<Button>(R.id.btn_allow).setOnClickListener {
-            respond(requestId, "allow-once", "button")
+            respond("allow-once", "button")
         }
         findViewById<Button>(R.id.btn_always).setOnClickListener {
-            respond(requestId, "allow-always", "button")
+            respond("allow-always", "button")
         }
         findViewById<Button>(R.id.btn_deny).setOnClickListener {
-            respond(requestId, "deny", "button")
+            respond("deny", "button")
         }
 
         val gestureHint = findViewById<TextView>(R.id.gesture_hint)
-        if (risk == "high") {
+        val isHighRisk = risk == "high"
+        if (isHighRisk) {
             gestureHint.text = "High risk: gesture disabled"
             gestureHint.setTextColor(0x88F44336.toInt())
         } else {
             gestureHint.text = "Flick wrist to allow / Shake to deny"
         }
+
+        flickDetector = FlickDetector(this) { gestureType ->
+            runOnUiThread {
+                val decision = when (gestureType) {
+                    FlickDetector.GestureType.FLICK_APPROVE -> "allow-once"
+                    FlickDetector.GestureType.SHAKE_DENY -> "deny"
+                }
+                respond(decision, "gesture")
+            }
+        }
+        flickDetector?.highRiskLocked = isHighRisk
 
         val timeoutMs = intent.getLongExtra("timeoutMs", 0L)
         val expiresAt = intent.getLongExtra("expiresAt", 0L)
@@ -93,30 +106,14 @@ class ApprovalActivity : AppCompatActivity() {
         }
     }
 
-    private fun onTimeout() {
-        if (responded) return
-        responded = true
-        val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 100, 50, 100), -1))
-        } else {
-            @Suppress("DEPRECATION")
-            vibrator.vibrate(longArrayOf(0, 100, 50, 100), -1)
-        }
-        Toast.makeText(this, "Request timed out", Toast.LENGTH_SHORT).show()
-        handler.postDelayed({ finish() }, 1500L)
-    }
-
     override fun onStart() {
         super.onStart()
-        bindService(
-            Intent(this, BleService::class.java),
-            connection,
-            Context.BIND_AUTO_CREATE
-        )
+        bindService(Intent(this, BleService::class.java), connection, Context.BIND_AUTO_CREATE)
+        flickDetector?.start()
     }
 
     override fun onStop() {
+        flickDetector?.stop()
         if (bound) {
             unbindService(connection)
             bound = false
@@ -124,19 +121,34 @@ class ApprovalActivity : AppCompatActivity() {
         super.onStop()
     }
 
-    private fun respond(requestId: String, decision: String, source: String) {
-        if (responded) return
-        responded = true
-        handler.removeCallbacksAndMessages(null)
-        bleService?.sendApprovalResponse(
-            ApprovalResponse(requestId, decision, source)
-        )
-        finish()
-    }
-
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
         super.onDestroy()
+    }
+
+    private fun respond(decision: String, source: String) {
+        val id = requestId ?: return
+        if (responded) return
+        responded = true
+        handler.removeCallbacksAndMessages(null)
+        bleService?.sendApprovalResponse(ApprovalResponse(id, decision, source))
+        finish()
+    }
+
+    private fun onTimeout() {
+        val id = requestId ?: return
+        if (responded) return
+        responded = true
+        bleService?.sendApprovalResponse(ApprovalResponse(id, "deny", "timeout"))
+        val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 100, 50, 100), -1))
+        } else {
+            @Suppress("DEPRECATION")
+            vibrator.vibrate(longArrayOf(0, 100, 50, 100), -1)
+        }
+        Toast.makeText(this, "Request timed out (denied)", Toast.LENGTH_SHORT).show()
+        handler.postDelayed({ finish() }, 1500L)
     }
 
     private fun vibrate(risk: String) {
