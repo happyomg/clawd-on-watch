@@ -431,7 +431,16 @@ class BleService : Service() {
         }
     }
 
+    @Suppress("DEPRECATION")
     private fun bringToForeground() {
+        val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+        val wl = pm.newWakeLock(
+            android.os.PowerManager.FULL_WAKE_LOCK
+                or android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP
+                or android.os.PowerManager.ON_AFTER_RELEASE,
+            "clawd:state-change"
+        )
+        wl.acquire(3000L)
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
         }

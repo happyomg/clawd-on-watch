@@ -72,7 +72,12 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        @Suppress("DEPRECATION")
+        window.addFlags(
+            android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                or android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+                or android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
+        )
         setContentView(R.layout.activity_main)
 
         petView = findViewById(R.id.pet_view)
