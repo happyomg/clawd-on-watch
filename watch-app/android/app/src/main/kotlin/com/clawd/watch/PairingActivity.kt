@@ -126,13 +126,16 @@ class PairingActivity : AppCompatActivity() {
             return
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
-            statusText.text = "Please enable\n\"Display over other apps\"\nfor Clawd"
-            val intent = Intent(
-                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                Uri.parse("package:$packageName")
-            )
-            startActivityForResult(intent, REQ_OVERLAY)
-            return
+            try {
+                val intent = Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:$packageName")
+                )
+                startActivityForResult(intent, REQ_OVERLAY)
+                return
+            } catch (e: Exception) {
+                Log.w(TAG, "Overlay settings unavailable: ${e.message}")
+            }
         }
         startServiceAndBind()
     }
@@ -141,12 +144,7 @@ class PairingActivity : AppCompatActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQ_OVERLAY) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && Settings.canDrawOverlays(this)) {
-                startServiceAndBind()
-            } else {
-                statusText.text = "Overlay permission required\nfor wake-on-state-change"
-                startServiceAndBind()
-            }
+            startServiceAndBind()
         }
     }
 
