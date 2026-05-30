@@ -35,6 +35,10 @@ class WatchController {
     return this._pushState();
   }
 
+  resetDedup() {
+    this._lastPayload = "";
+  }
+
   notifyPermissionsChanged() {
     if (!this._started) return null;
     return this._pushPermissions();

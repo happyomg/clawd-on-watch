@@ -838,6 +838,9 @@ function createHardwareBuddyAdapter(options = {}) {
           retryAttempt = 0;
           clearAutoConnectTimer();
           lastError = null;
+          if (controller && typeof controller.resetDedup === "function") {
+            controller.resetDedup();
+          }
         } else if (!restartTimer && state && state.previous && state.previous.connected === true) {
           handleIssue({ code: "DISCONNECTED", message: "transport disconnected" });
         }
