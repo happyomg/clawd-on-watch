@@ -34,6 +34,9 @@
         android:networkSecurityConfig="@xml/network_security_config"
         tools:targetApi="30">
 
+        <!-- Required for Wear OS ambient mode -->
+        <uses-library android:name="com.google.android.wearable" android:required="false" />
+
         <!-- Main activity: pet + agent status -->
         <activity
             android:name=".MainActivity"
