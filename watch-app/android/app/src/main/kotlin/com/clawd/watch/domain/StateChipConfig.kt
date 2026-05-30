@@ -13,9 +13,7 @@ object StateChipConfig {
         ClawdState.CARRYING -> 0xFF60A5FA.toInt()
         ClawdState.IDLE -> 0xFF6B7280.toInt()
         ClawdState.SLEEPING -> 0xFF4B5563.toInt()
-        ClawdState.YAWNING,
-        ClawdState.DOZING,
-        ClawdState.COLLAPSING -> 0xFF4B5563.toInt()
+        ClawdState.YAWNING, ClawdState.DOZING, ClawdState.COLLAPSING -> 0xFF4B5563.toInt()
         ClawdState.WAKING -> 0xFF6B7280.toInt()
     }
 
@@ -43,22 +41,6 @@ object StateChipConfig {
         else -> true
     }
 
-    fun statusDotColor(state: ClawdState): Int = when {
-        state == ClawdState.ERROR -> 0xFFF87171.toInt()
-        state == ClawdState.SLEEPING || state.isSleepSequence -> 0xFF4B5563.toInt()
-        state == ClawdState.IDLE -> 0xFF6B7280.toInt()
-        else -> 0xFF4ADE80.toInt()
-    }
-
-    fun connectionIndicator(connected: Boolean, activeCount: Int): String = when {
-        !connected -> "○"
-        activeCount <= 0 -> "⬤"
-        else -> "⬤ $activeCount"
-    }
-
-    const val COLOR_CONNECTED = 0xFF4ADE80.toInt()
     const val COLOR_DISCONNECTED = 0xFFF87171.toInt()
     const val COLOR_INDICATOR_TEXT = 0xCCFFFFFF.toInt()
-    const val BG_INDICATOR = 0x33FFFFFF
-    const val BG_CHIP = 0x66000000
 }

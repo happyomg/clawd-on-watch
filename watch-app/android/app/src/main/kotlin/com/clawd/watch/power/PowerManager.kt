@@ -18,20 +18,6 @@ class PowerManager(private val context: Context) {
     private var isScreenOn = true
     private var batteryPct = 100
 
-    val animIntervalMs: Long
-        get() = when (currentMode) {
-            PowerMode.NORMAL -> 100L       // 10 FPS
-            PowerMode.LOW_BATTERY -> 200L  // 5 FPS
-            PowerMode.SCREEN_OFF -> 0L     // paused
-        }
-
-    val heartbeatIntervalMs: Long
-        get() = when (currentMode) {
-            PowerMode.NORMAL -> 30_000L
-            PowerMode.LOW_BATTERY -> 60_000L
-            PowerMode.SCREEN_OFF -> 120_000L
-        }
-
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {

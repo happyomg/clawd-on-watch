@@ -45,13 +45,6 @@ class SvgPetView @JvmOverloads constructor(
             updateSvg()
         }
 
-    var displayHint: String? = null
-        set(value) {
-            if (field == value) return
-            field = value
-            updateSvg()
-        }
-
     init {
         webViewAvailable = try {
             val wv = WebView(context).apply {
@@ -99,7 +92,7 @@ class SvgPetView @JvmOverloads constructor(
 
     private fun updateSvg() {
         if (!loaded) return
-        val svg = ThemeConfig.resolveSvg(state, activeSessionCount, displayHint)
+        val svg = ThemeConfig.resolveSvg(state, activeSessionCount)
         if (svg == currentSvg) return
         currentSvg = svg
 

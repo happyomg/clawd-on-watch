@@ -123,11 +123,6 @@ class FlickDetector(
         }
     }
 
-    fun reportFalsePositive() {
-        falsePositiveCount++
-        adjustSensitivity()
-    }
-
     private fun recordSuccess() {
         successCount++
         adjustSensitivity()
