@@ -77,13 +77,15 @@ async def scan_for_watch(name_prefix, timeout=10.0):
     return results
 
 
-async def read_stdin_lines(queue):
+async def read_stdin_lines(queue, on_eof=None):
     loop = asyncio.get_event_loop()
     reader = asyncio.StreamReader()
     await loop.connect_read_pipe(lambda: asyncio.StreamReaderProtocol(reader), sys.stdin)
     while True:
         line = await reader.readline()
         if not line:
+            if on_eof:
+                on_eof()
             await queue.put(None)
             break
         text = line.decode("utf-8", errors="replace").strip()
@@ -104,7 +106,11 @@ async def run(args):
     stopping = False
     stdin_queue = asyncio.Queue()
 
-    asyncio.ensure_future(read_stdin_lines(stdin_queue))
+    def on_stdin_eof():
+        nonlocal stopping
+        stopping = True
+
+    asyncio.ensure_future(read_stdin_lines(stdin_queue, on_eof=on_stdin_eof))
 
     async def schedule_reconnect():
         nonlocal reconnect_task
@@ -228,11 +234,18 @@ async def run(args):
         try:
             msg = await asyncio.wait_for(stdin_queue.get(), timeout=15.0)
         except asyncio.TimeoutError:
-            if client and client.is_connected and last_snapshot_data is not None:
+            if client and client.is_connected:
                 try:
-                    await client.write_gatt_char(CWD1_STATE, last_snapshot_data)
+                    await client.read_gatt_char(CWD4_META)
                 except Exception:
+                    emit_error("HEALTH_CHECK_FAILED", "CWD4 read failed, reconnecting")
                     await force_disconnect()
+                    continue
+                if last_snapshot_data is not None:
+                    try:
+                        await client.write_gatt_char(CWD1_STATE, last_snapshot_data)
+                    except Exception:
+                        await force_disconnect()
             elif not client or not client.is_connected:
                 if not reconnect_task and not stopping:
                     await schedule_reconnect()

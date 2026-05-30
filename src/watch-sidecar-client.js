@@ -41,6 +41,10 @@ class WatchSidecarClient {
 
   start() {
     if (this.started) return;
+    if (this.proc) {
+      try { this.proc.kill("SIGKILL"); } catch (_) {}
+      this.proc = null;
+    }
     const env = { ...process.env, PYTHONIOENCODING: "utf-8:replace", ...(this.spawnOptions.env || {}) };
     this.proc = childProcess.spawn(this.command, this.args, {
       ...this.spawnOptions,
