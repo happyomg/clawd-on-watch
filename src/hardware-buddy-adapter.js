@@ -842,9 +842,16 @@ function createHardwareBuddyAdapter(options = {}) {
           handleIssue({ code: "DISCONNECTED", message: "transport disconnected" });
         }
         publishStatus();
-        // Link security/connectivity changes must retract or restore prompt fields immediately.
         if (controller && typeof controller.notifyStateChanged === "function") {
           controller.notifyStateChanged();
+        }
+      },
+      onApprovalResponse: (msg) => {
+        if (!msg || !msg.requestId) return;
+        const resolve = activeConfig.permissionsEnabled && typeof options.resolvePermissionEntry === "function"
+          ? options.resolvePermissionEntry : null;
+        if (resolve) {
+          callSafely(() => resolve({ requestId: msg.requestId, decision: msg.decision || "deny" }), log);
         }
       },
     });

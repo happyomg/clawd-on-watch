@@ -33,6 +33,8 @@ CWD2_APPROVAL_REQ = "00000cd2-0000-1000-8000-00805f9b34fb"
 CWD3_APPROVAL_RESP = "00000cd3-0000-1000-8000-00805f9b34fb"
 CWD4_META = "00000cd4-0000-1000-8000-00805f9b34fb"
 
+RECONNECT_DELAYS = [2, 5, 10, 15, 30, 30, 30]
+
 
 def emit(obj):
     line = json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
@@ -86,16 +88,54 @@ async def read_stdin_lines(queue):
 async def run(args):
     client = None
     connected_name = None
+    last_address = None
+    reconnect_attempt = 0
+    reconnect_task = None
+    stopping = False
     stdin_queue = asyncio.Queue()
 
     asyncio.ensure_future(read_stdin_lines(stdin_queue))
+
+    async def schedule_reconnect():
+        nonlocal reconnect_task
+        if stopping or reconnect_task is not None:
+            return
+        addr = last_address
+        if not addr:
+            reconnect_task = asyncio.ensure_future(reconnect_via_scan())
+        else:
+            reconnect_task = asyncio.ensure_future(reconnect_to(addr))
+
+    async def reconnect_to(address):
+        nonlocal reconnect_task, reconnect_attempt
+        delay = RECONNECT_DELAYS[min(reconnect_attempt, len(RECONNECT_DELAYS) - 1)]
+        reconnect_attempt += 1
+        await asyncio.sleep(delay)
+        reconnect_task = None
+        if stopping or (client and client.is_connected):
+            return
+        await connect_to(address)
+        if not client or not client.is_connected:
+            await schedule_reconnect()
+
+    async def reconnect_via_scan():
+        nonlocal reconnect_task, reconnect_attempt
+        delay = RECONNECT_DELAYS[min(reconnect_attempt, len(RECONNECT_DELAYS) - 1)]
+        reconnect_attempt += 1
+        await asyncio.sleep(delay)
+        reconnect_task = None
+        if stopping or (client and client.is_connected):
+            return
+        await do_scan()
+        if not client or not client.is_connected:
+            await schedule_reconnect()
 
     def on_disconnect(_client):
         nonlocal client
         client = None
         emit_status(False)
-        if not args.address:
-            emit({"type": "devices", "items": []})
+        if not stopping:
+            asyncio.ensure_future(schedule_reconnect())
 
     def on_cwd3_notify(_sender, data):
         try:
@@ -109,7 +149,7 @@ async def run(args):
             pass
 
     async def connect_to(address):
-        nonlocal client, connected_name
+        nonlocal client, connected_name, last_address, reconnect_attempt
         if client and client.is_connected:
             await client.disconnect()
 
@@ -127,6 +167,8 @@ async def run(args):
             await c.start_notify(CWD3_APPROVAL_RESP, on_cwd3_notify)
 
             client = c
+            last_address = address
+            reconnect_attempt = 0
             emit_status(True, connected_name)
         except Exception as e:
             emit_error("CONNECT_FAILED", str(e))
@@ -150,6 +192,9 @@ async def run(args):
         await connect_to(args.address)
     else:
         await do_scan()
+
+    if not client or not client.is_connected:
+        await schedule_reconnect()
 
     # Main loop: read stdin commands
     while True:
@@ -180,14 +225,25 @@ async def run(args):
         elif msg_type == "connect":
             addr = msg.get("address", "")
             if addr:
+                if reconnect_task:
+                    reconnect_task.cancel()
+                    reconnect_task = None
+                reconnect_attempt = 0
                 await connect_to(addr)
 
         elif msg_type == "scan":
+            if reconnect_task:
+                reconnect_task.cancel()
+                reconnect_task = None
+            reconnect_attempt = 0
             await do_scan()
 
         elif msg_type == "stop":
             break
 
+    stopping = True
+    if reconnect_task:
+        reconnect_task.cancel()
     if client and client.is_connected:
         await client.disconnect()
     emit_status(False)

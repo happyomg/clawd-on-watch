@@ -2,6 +2,7 @@
 
 (function initSettingsHardwareBuddyPanel(root) {
   const DEFAULT_NAME_PREFIX = "Clawstick";
+  const VALID_BACKENDS = ["bleak", "watch", "fake"];
 
   function build(core, options = {}) {
     const state = core.state;
@@ -22,6 +23,7 @@
       children: [buildOptionList("hardware-buddy-option-list", [
         buildHardwareBuddyStatusRow(core),
         buildHardwareBuddySwitchRow(core, "enabled", "hardwareBuddyEnable", "hardwareBuddyEnableDesc"),
+        buildHardwareBuddyBackendRow(core),
         buildHardwareBuddyTextRow(core, "address", "hardwareBuddyAddress", "hardwareBuddyAddressDesc", {
           placeholder: "00:4B:12:A1:9E:A6",
           maxLength: 120,
@@ -51,7 +53,7 @@
     const current = snap.hardwareBuddy && typeof snap.hardwareBuddy === "object" ? snap.hardwareBuddy : {};
     return {
       enabled: current.enabled === true,
-      backend: current.backend === "fake" ? "fake" : "bleak",
+      backend: VALID_BACKENDS.includes(current.backend) ? current.backend : "bleak",
       address: typeof current.address === "string" ? current.address : "",
       namePrefix: typeof current.namePrefix === "string" && current.namePrefix.trim() ? current.namePrefix : DEFAULT_NAME_PREFIX,
       permissionsEnabled: current.permissionsEnabled === true,
@@ -313,6 +315,37 @@
         core.ops.showToast(t(core, "hardwareBuddyTestToastError") + hardwareBuddyTestErrorText(core, testState.result), { error: true });
         core.ops.requestRender({ content: true });
       });
+    });
+    return row;
+  }
+
+  function buildHardwareBuddyBackendRow(core) {
+    const config = getHardwareBuddyConfig(core.state);
+    const row = document.createElement("div");
+    row.className = "row hardware-buddy-field-row";
+    row.innerHTML =
+      `<div class="row-text">` +
+        `<span class="row-label"></span>` +
+        `<span class="row-desc"></span>` +
+      `</div>` +
+      `<div class="row-control hardware-buddy-text-control">` +
+        `<select class="hardware-buddy-backend-select"></select>` +
+      `</div>`;
+    row.querySelector(".row-label").textContent = t(core, "hardwareBuddyBackend") || "Backend";
+    row.querySelector(".row-desc").textContent = t(core, "hardwareBuddyBackendDesc") || "BLE transport mode";
+    const select = row.querySelector("select");
+    const labels = { bleak: "Clawstick (BLE Central)", watch: "Watch (BLE Peripheral)", fake: "Fake (Test)" };
+    for (const backend of VALID_BACKENDS) {
+      const option = document.createElement("option");
+      option.value = backend;
+      option.textContent = labels[backend] || backend;
+      if (backend === config.backend) option.selected = true;
+      select.appendChild(option);
+    }
+    select.addEventListener("change", () => {
+      const nextBackend = select.value;
+      const nextPrefix = nextBackend === "watch" ? "Clawd" : DEFAULT_NAME_PREFIX;
+      updateHardwareBuddyConfig(core, { backend: nextBackend, namePrefix: nextPrefix });
     });
     return row;
   }

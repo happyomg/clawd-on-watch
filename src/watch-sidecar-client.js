@@ -19,6 +19,7 @@ class WatchSidecarClient {
     this.onDevices = options.onDevices || (() => {});
     this.onError = options.onError || (() => {});
     this.onTransportStateChanged = options.onTransportStateChanged || (() => {});
+    this.onApprovalResponse = options.onApprovalResponse || (() => {});
 
     this.proc = null;
     this.started = false;
@@ -28,7 +29,13 @@ class WatchSidecarClient {
     this.transport = {
       connected: false,
       secure: false,
-      send: (snapshot) => this._writeStdin({ type: "snapshot", payload: snapshot }),
+      send: (payload) => {
+        if (payload && payload.type === "approval_request") {
+          this._writeStdin(payload);
+        } else {
+          this._writeStdin({ type: "snapshot", payload });
+        }
+      },
     };
   }
 
@@ -120,7 +127,7 @@ class WatchSidecarClient {
     } else if (type === "devices") {
       this.onDevices(msg.items || []);
     } else if (type === "approval_response") {
-      this.onStatus(msg);
+      this.onApprovalResponse(msg);
     } else if (type === "error") {
       this.onError({ code: msg.code || "SIDECAR_ERROR", message: msg.message || "" });
     }
