@@ -575,7 +575,7 @@ class BleService : Service() {
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
-            .setCategory(Notification.CATEGORY_NAVIGATION)
+            .setCategory(Notification.CATEGORY_SERVICE)
             .addExtras(extras)
             .build()
     }
