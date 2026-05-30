@@ -269,8 +269,12 @@ function loadQuickCommandModules(coreRoot) {
 }
 
 function defaultWatchSidecarScript(env = process.env) {
-  return env.CLAWD_WATCH_BUDDY_SIDECAR
-    || path.join(__dirname, "..", "scripts", "watch_buddy_bridge.py");
+  if (env.CLAWD_WATCH_BUDDY_SIDECAR) return env.CLAWD_WATCH_BUDDY_SIDECAR;
+  const packaged = typeof process !== "undefined" && process.resourcesPath
+    ? path.join(process.resourcesPath, "sidecars", "watch-bridge", "watch_buddy_bridge.py")
+    : null;
+  if (packaged && fs.existsSync(packaged)) return packaged;
+  return path.join(__dirname, "..", "scripts", "watch_buddy_bridge.py");
 }
 
 function defaultSidecarScript(coreRoot, env = process.env) {

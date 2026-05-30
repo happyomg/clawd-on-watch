@@ -1124,6 +1124,21 @@ const repairDoctorIssue = createRepairDoctorIssue({
   setBubbleCategoryEnabled,
 });
 
+async function hardwareBuddyInstallBleak(_payload, _deps) {
+  const { execFile } = require("child_process");
+  const python = process.env.CLAWD_HARDWARE_BUDDY_PYTHON || "python3";
+  return new Promise((resolve) => {
+    execFile(python, ["-m", "pip", "install", "bleak"], { timeout: 60000 }, (err, stdout, stderr) => {
+      if (err) {
+        const msg = (stderr || err.message || "").trim().split("\n").pop() || "install failed";
+        resolve({ status: "error", message: msg });
+      } else {
+        resolve({ status: "ok", message: (stdout || "").trim().split("\n").pop() || "installed" });
+      }
+    });
+  });
+}
+
 const commandRegistry = {
   removeTheme,
   installHooks,
@@ -1161,6 +1176,7 @@ const commandRegistry = {
   "telegramApproval.test": telegramApprovalSendTest,
   "telegramMigration.snapshot": telegramMigrationSnapshot,
   "telegramMigration.dispatch": telegramMigrationDispatch,
+  "hardwareBuddy.installBleak": hardwareBuddyInstallBleak,
 };
 
 module.exports = {

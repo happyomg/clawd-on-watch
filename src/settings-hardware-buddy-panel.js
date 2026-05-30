@@ -217,6 +217,37 @@
     const replyBadge = row.querySelector(".hardware-buddy-reply-badge");
     replyBadge.className = `hardware-buddy-status-badge hardware-buddy-reply-badge hardware-buddy-reply-${replyKind}`;
     replyBadge.textContent = hardwareBuddyReplyText(core, status, config);
+
+    const isMissingBleak = status && status.lastError && status.lastError.category === "missing_bleak";
+    if (isMissingBleak && config.backend === "watch") {
+      const installBtn = document.createElement("button");
+      installBtn.type = "button";
+      installBtn.className = "hardware-buddy-install-button";
+      installBtn.textContent = "Install bleak";
+      installBtn.style.cssText = "margin-top:6px;padding:4px 12px;font-size:12px;border-radius:6px;border:1px solid #555;background:#333;color:#eee;cursor:pointer;";
+      installBtn.addEventListener("click", () => {
+        installBtn.disabled = true;
+        installBtn.textContent = "Installing...";
+        window.settingsAPI.command("hardwareBuddy.installBleak").then((result) => {
+          if (result && result.status === "ok") {
+            installBtn.textContent = "Installed! Restart to connect.";
+            installBtn.style.borderColor = "#4ADE80";
+            core.ops.showToast("bleak installed successfully", { error: false });
+          } else {
+            installBtn.textContent = "Failed: " + ((result && result.message) || "unknown error");
+            installBtn.style.borderColor = "#F87171";
+            installBtn.disabled = false;
+            core.ops.showToast("bleak install failed: " + ((result && result.message) || ""), { error: true });
+          }
+        }).catch((err) => {
+          installBtn.textContent = "Error";
+          installBtn.disabled = false;
+          core.ops.showToast("install error: " + (err && err.message), { error: true });
+        });
+      });
+      row.querySelector(".row-text").appendChild(installBtn);
+    }
+
     return row;
   }
 
