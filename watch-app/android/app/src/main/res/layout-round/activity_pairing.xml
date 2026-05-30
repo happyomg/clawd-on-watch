@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:paddingStart="@dimen/pairing_padding_horizontal"
+    android:paddingEnd="@dimen/pairing_padding_horizontal"
+    android:paddingTop="@dimen/pairing_padding_vertical"
+    android:paddingBottom="24dp"
+    android:background="@android:color/black">
+
+    <TextView
+        android:id="@+id/pairing_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Clawd Watch"
+        android:textSize="@dimen/pairing_title_text_size"
+        android:textColor="#CCFFFFFF"
+        android:gravity="center" />
+
+    <ProgressBar
+        android:id="@+id/pairing_progress"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="20dp"
+        android:layout_marginBottom="8dp"
+        android:indeterminate="true" />
+
+    <TextView
+        android:id="@+id/status_text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Preparing..."
+        android:textSize="@dimen/pairing_status_text_size"
+        android:textColor="#99FFFFFF"
+        android:gravity="center"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp" />
+
+</LinearLayout>

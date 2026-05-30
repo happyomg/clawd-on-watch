@@ -10,9 +10,9 @@
         android:layout_height="wrap_content"
         android:orientation="vertical"
         android:gravity="center_horizontal"
-        android:paddingStart="36dp"
-        android:paddingEnd="36dp"
-        android:paddingTop="32dp"
+        android:paddingStart="@dimen/approval_padding_horizontal"
+        android:paddingEnd="@dimen/approval_padding_horizontal"
+        android:paddingTop="@dimen/approval_padding_vertical"
         android:paddingBottom="32dp">
 
         <!-- Risk badge -->

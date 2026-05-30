@@ -10,10 +10,6 @@ import android.os.Bundle
 import android.os.IBinder
 import android.provider.Settings
 import android.util.Log
-import android.view.Gravity
-import android.view.View
-import android.widget.LinearLayout
-import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -75,7 +71,8 @@ class PairingActivity : AppCompatActivity() {
             return
         }
 
-        setContentView(buildUi())
+        setContentView(R.layout.activity_pairing)
+        statusText = findViewById(R.id.status_text)
 
         checkAndRequestPermissions()
     }
@@ -93,30 +90,6 @@ class PairingActivity : AppCompatActivity() {
         statusText.text = "Advertising...\nOpen Clawd on your Mac\nand connect to this watch"
         BleService.start(this)
         bindService(Intent(this, BleService::class.java), serviceConnection, Context.BIND_AUTO_CREATE)
-    }
-
-    private fun buildUi(): View {
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(24, 48, 24, 24)
-            gravity = Gravity.CENTER_HORIZONTAL
-        }
-        root.addView(TextView(this).apply {
-            text = "Clawd Watch"
-            textSize = 18f
-            gravity = Gravity.CENTER
-        })
-        root.addView(ProgressBar(this).apply {
-            setPadding(0, 24, 0, 12)
-            isIndeterminate = true
-        })
-        statusText = TextView(this).apply {
-            text = "Preparing..."
-            gravity = Gravity.CENTER
-            setPadding(0, 12, 0, 12)
-        }
-        root.addView(statusText)
-        return root
     }
 
     private fun checkAndRequestPermissions() {

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- MainActivity -->
+    <dimen name="main_indicator_margin_top">6dp</dimen>
+    <dimen name="main_indicator_text_size">9sp</dimen>
+    <dimen name="main_chip_margin_bottom">10dp</dimen>
+    <dimen name="main_chip_text_size">10sp</dimen>
+
+    <!-- ApprovalActivity -->
+    <dimen name="approval_padding_horizontal">20dp</dimen>
+    <dimen name="approval_padding_vertical">20dp</dimen>
+
+    <!-- PairingActivity -->
+    <dimen name="pairing_padding_horizontal">24dp</dimen>
+    <dimen name="pairing_padding_vertical">48dp</dimen>
+    <dimen name="pairing_title_text_size">18sp</dimen>
+    <dimen name="pairing_status_text_size">13sp</dimen>
+</resources>

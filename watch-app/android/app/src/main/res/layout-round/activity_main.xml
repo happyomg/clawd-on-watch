@@ -10,36 +10,34 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <!-- Connection indicator pill (top center, extra padding for round bezel) -->
     <TextView
         android:id="@+id/connection_indicator"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="top|center_horizontal"
-        android:layout_marginTop="14dp"
+        android:layout_marginTop="@dimen/main_indicator_margin_top"
         android:paddingStart="8dp"
         android:paddingEnd="8dp"
         android:paddingTop="2dp"
         android:paddingBottom="2dp"
         android:background="@drawable/pill_indicator"
         android:text="⬤"
-        android:textSize="9sp"
+        android:textSize="@dimen/main_indicator_text_size"
         android:textColor="#CCFFFFFF"
         android:gravity="center" />
 
-    <!-- State chip pill (bottom center) -->
     <TextView
         android:id="@+id/state_chip"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|center_horizontal"
-        android:layout_marginBottom="16dp"
+        android:layout_marginBottom="@dimen/main_chip_margin_bottom"
         android:paddingStart="10dp"
         android:paddingEnd="10dp"
         android:paddingTop="2dp"
         android:paddingBottom="2dp"
         android:background="@drawable/pill_chip"
-        android:textSize="9sp"
+        android:textSize="@dimen/main_chip_text_size"
         android:textColor="#E6FFFFFF"
         android:gravity="center"
         android:visibility="gone" />
