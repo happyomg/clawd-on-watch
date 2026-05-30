@@ -118,6 +118,9 @@ const { EVENTS: TELEGRAM_MIGRATION_EVENTS } = require("./telegram-migration-stat
 const {
   validateHardwareBuddySettings,
 } = require("./hardware-buddy-settings");
+const {
+  validateWatchSettings,
+} = require("./watch-settings");
 
 const TELEGRAM_MIGRATION_RENDERER_EVENTS = new Set([
   TELEGRAM_MIGRATION_EVENTS.USER_TEST_NATIVE,
@@ -403,6 +406,10 @@ const updateRegistry = {
 
   hardwareBuddy(value) {
     return validateHardwareBuddySettings(value);
+  },
+
+  watch(value) {
+    return validateWatchSettings(value);
   },
 
   shortcuts: {
@@ -1124,16 +1131,15 @@ const repairDoctorIssue = createRepairDoctorIssue({
   setBubbleCategoryEnabled,
 });
 
-async function hardwareBuddyInstallBleak(_payload, _deps) {
+async function watchInstallBleak(_payload, _deps) {
   const { execFile } = require("child_process");
-  const python = process.env.CLAWD_HARDWARE_BUDDY_PYTHON || "python3";
+  const python = process.env.CLAWD_WATCH_PYTHON || process.env.CLAWD_HARDWARE_BUDDY_PYTHON || "python";
   return new Promise((resolve) => {
-    execFile(python, ["-m", "pip", "install", "bleak"], { timeout: 60000 }, (err, stdout, stderr) => {
+    execFile(python, ["-m", "pip", "install", "bleak"], { timeout: 60000 }, (err, _stdout, stderr) => {
       if (err) {
-        const msg = (stderr || err.message || "").trim().split("\n").pop() || "install failed";
-        resolve({ status: "error", message: msg });
+        resolve({ status: "error", message: (stderr || err.message || "").trim().split("\n").pop() || "install failed" });
       } else {
-        resolve({ status: "ok", message: (stdout || "").trim().split("\n").pop() || "installed" });
+        resolve({ status: "ok" });
       }
     });
   });
@@ -1176,7 +1182,7 @@ const commandRegistry = {
   "telegramApproval.test": telegramApprovalSendTest,
   "telegramMigration.snapshot": telegramMigrationSnapshot,
   "telegramMigration.dispatch": telegramMigrationDispatch,
-  "hardwareBuddy.installBleak": hardwareBuddyInstallBleak,
+  "watch.installBleak": watchInstallBleak,
 };
 
 module.exports = {

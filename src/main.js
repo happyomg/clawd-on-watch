@@ -2298,8 +2298,6 @@ hardwareBuddyAdapter = createHardwareBuddyAdapter({
   env: process.env,
   getSettings: () => _settingsController.get("hardwareBuddy"),
   getSessionSnapshot: () => _state.buildSessionSnapshot(),
-  getCurrentState: () => _state.getCurrentState(),
-  getCurrentSvg: () => _state.getCurrentSvg(),
   getPendingPermissions: () => pendingPermissions,
   getDoNotDisturb: () => doNotDisturb,
   isAgentEnabled: (agentId) => _isAgentEnabled({ agents: _settingsController.get("agents") }, agentId),
@@ -2319,6 +2317,43 @@ unsubscribeHardwareBuddySettings = _settingsController.subscribeKey("hardwareBud
     console.warn("Clawd: failed to apply Hardware Buddy settings:", err && err.message);
     hardwareBuddyLog(`settings apply failed: ${err && err.message ? err.message : err}`);
   }
+});
+
+// ── Watch adapter (independent from Hardware Buddy) ──
+
+const { createWatchAdapter } = require("./watch-adapter");
+let watchAdapter = null;
+let watchStatus = null;
+let unsubscribeWatchSettings = null;
+
+function watchLog(message) {
+  console.log("Clawd Watch:", message);
+}
+
+function broadcastWatchStatus(status) {
+  watchStatus = status;
+  const { BrowserWindow } = require("electron");
+  for (const win of BrowserWindow.getAllWindows()) {
+    try { win.webContents.send("watch:status-changed", status); } catch (_) {}
+  }
+}
+
+watchAdapter = createWatchAdapter({
+  env: process.env,
+  getSettings: () => _settingsController.get("watch"),
+  getSessionSnapshot: () => _state.buildSessionSnapshot(),
+  getCurrentState: () => _state.getCurrentState(),
+  getCurrentSvg: () => _state.getCurrentSvg(),
+  getPendingPermissions: () => pendingPermissions,
+  getDoNotDisturb: () => doNotDisturb,
+  resolvePermissionEntry: (...args) => resolvePermissionEntry(...args),
+  log: watchLog,
+  onStatusChanged: broadcastWatchStatus,
+});
+
+unsubscribeWatchSettings = _settingsController.subscribeKey("watch", () => {
+  if (!watchAdapter) return;
+  try { watchAdapter.applySettingsChange(); } catch (err) { watchLog(`settings apply failed: ${err && err.message}`); }
 });
 
 // ── Menu — delegated to src/menu.js ──
@@ -2644,6 +2679,9 @@ registerSettingsIpc({
   getAllAgents,
   getHardwareBuddyStatus: () => hardwareBuddyStatus || (hardwareBuddyAdapter && hardwareBuddyAdapter.getStatus
     ? hardwareBuddyAdapter.getStatus()
+    : null),
+  getWatchStatus: () => watchStatus || (watchAdapter && typeof watchAdapter.getStatus === "function"
+    ? watchAdapter.getStatus()
     : null),
   testHardwareBuddyApproval: () => sendHardwareBuddyTestApproval(),
   getQuickCommandPresets: () => hardwareBuddyAdapter && typeof hardwareBuddyAdapter.getQuickCommandPresets === "function"
@@ -3051,6 +3089,12 @@ if (!gotTheLock) {
       hardwareBuddyLog(`start failed: ${err && err.message ? err.message : err}`);
     }
 
+    try {
+      if (watchAdapter) watchAdapter.start();
+    } catch (err) {
+      watchLog(`start failed: ${err && err.message ? err.message : err}`);
+    }
+
     // Auto-install VS Code/Cursor terminal-focus extension
     try { installTerminalFocusExtension(); } catch (err) {
       console.warn("Clawd: failed to auto-install terminal-focus extension:", err.message);
@@ -3079,6 +3123,11 @@ if (!gotTheLock) {
       unsubscribeHardwareBuddySettings = null;
     }
     if (hardwareBuddyAdapter) hardwareBuddyAdapter.stop();
+    if (watchAdapter) watchAdapter.stop();
+    if (typeof unsubscribeWatchSettings === "function") {
+      unsubscribeWatchSettings();
+      unsubscribeWatchSettings = null;
+    }
     _perm.cleanup();
     _server.cleanup();
     _updateBubble.cleanup();

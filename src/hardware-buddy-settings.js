@@ -9,7 +9,7 @@ const DEFAULT_HARDWARE_BUDDY_SETTINGS = Object.freeze({
   quickCommandsEnabled: false,
 });
 
-const HARDWARE_BUDDY_BACKENDS = Object.freeze(["bleak", "watch", "fake"]);
+const HARDWARE_BUDDY_BACKENDS = Object.freeze(["bleak", "fake"]);
 
 function isPlainObject(value) {
   return !!(value && typeof value === "object" && !Array.isArray(value));
@@ -41,7 +41,7 @@ function validateHardwareBuddySettings(value) {
     return { status: "error", message: "hardwareBuddy.enabled must be a boolean" };
   }
   if (!HARDWARE_BUDDY_BACKENDS.includes(value.backend)) {
-    return { status: "error", message: "hardwareBuddy.backend must be bleak, watch, or fake" };
+    return { status: "error", message: "hardwareBuddy.backend must be bleak or fake" };
   }
   if (typeof value.address !== "string" || value.address.length > 120 || /[\u0000-\u001f\u007f]/.test(value.address)) {
     return { status: "error", message: "hardwareBuddy.address must be a short string without control characters" };

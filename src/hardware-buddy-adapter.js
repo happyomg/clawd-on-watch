@@ -226,13 +226,6 @@ function defaultCoreRoot(env = process.env) {
     || path.resolve(__dirname, "..", "..", "clawstick");
 }
 
-function loadWatchModules() {
-  return {
-    HardwareBuddyController: require("./watch-controller").WatchController,
-    SidecarClient: require("./watch-sidecar-client").WatchSidecarClient,
-  };
-}
-
 function loadCoreModules(coreRoot) {
   const controllerPath = path.join(coreRoot, "src", "hardware-buddy", "controller.js");
   const sidecarPath = path.join(coreRoot, "src", "hardware-buddy", "sidecar-client.js");
@@ -266,15 +259,6 @@ function loadQuickCommandModules(coreRoot) {
       createMemoryQuickCommandSink: (options) => new FallbackMemoryQuickCommandSink(options),
     };
   }
-}
-
-function defaultWatchSidecarScript(env = process.env) {
-  if (env.CLAWD_WATCH_BUDDY_SIDECAR) return env.CLAWD_WATCH_BUDDY_SIDECAR;
-  const packaged = typeof process !== "undefined" && process.resourcesPath
-    ? path.join(process.resourcesPath, "sidecars", "watch-bridge", "watch_buddy_bridge.py")
-    : null;
-  if (packaged && fs.existsSync(packaged)) return packaged;
-  return path.join(__dirname, "..", "scripts", "watch_buddy_bridge.py");
 }
 
 function defaultSidecarScript(coreRoot, env = process.env) {
@@ -314,8 +298,8 @@ function readRuntimeConfig(options, env = process.env) {
   if (env.CLAWD_HARDWARE_BUDDY_NAME_PREFIX) config.namePrefix = String(env.CLAWD_HARDWARE_BUDDY_NAME_PREFIX).trim();
   if (options.autoConnectAddress) config.address = String(options.autoConnectAddress).trim();
 
-  config.backend = config.backend === "fake" ? "fake" : config.backend === "watch" ? "watch" : "bleak";
-  if (!config.namePrefix) config.namePrefix = config.backend === "watch" ? "Clawd" : "Clawstick";
+  config.backend = config.backend === "fake" ? "fake" : "bleak";
+  if (!config.namePrefix) config.namePrefix = "Clawstick";
   config.autoConnectByNamePrefix = !config.address && (hasSettings || !!env.CLAWD_HARDWARE_BUDDY_NAME_PREFIX);
   return config;
 }
@@ -327,11 +311,8 @@ function buildSidecarArgs(options) {
     config,
   } = options;
   const backend = config.backend || env.CLAWD_HARDWARE_BUDDY_BACKEND || "bleak";
-  const script = backend === "watch"
-    ? defaultWatchSidecarScript(env)
-    : defaultSidecarScript(coreRoot, env);
   const args = [
-    script,
+    defaultSidecarScript(coreRoot, env),
     "--backend",
     backend,
   ];
@@ -343,9 +324,6 @@ function buildSidecarArgs(options) {
   }
   if (config.namePrefix) {
     args.push("--name-prefix", config.namePrefix);
-  }
-  if (backend === "watch" && config.address) {
-    args.push("--address", config.address);
   }
   if (backend === "fake"
     && /^(true|false)$/i.test(String(env.CLAWD_HARDWARE_BUDDY_FAKE_SECURE || "").trim())) {
@@ -842,23 +820,13 @@ function createHardwareBuddyAdapter(options = {}) {
           retryAttempt = 0;
           clearAutoConnectTimer();
           lastError = null;
-          if (controller && typeof controller.resetDedup === "function") {
-            controller.resetDedup();
-          }
         } else if (!restartTimer && state && state.previous && state.previous.connected === true) {
           handleIssue({ code: "DISCONNECTED", message: "transport disconnected" });
         }
         publishStatus();
+        // Link security/connectivity changes must retract or restore prompt fields immediately.
         if (controller && typeof controller.notifyStateChanged === "function") {
           controller.notifyStateChanged();
-        }
-      },
-      onApprovalResponse: (msg) => {
-        if (!msg || !msg.requestId) return;
-        const resolve = activeConfig.permissionsEnabled && typeof options.resolvePermissionEntry === "function"
-          ? options.resolvePermissionEntry : null;
-        if (resolve) {
-          callSafely(() => resolve({ requestId: msg.requestId, decision: msg.decision || "deny" }), log);
         }
       },
     });
@@ -868,8 +836,6 @@ function createHardwareBuddyAdapter(options = {}) {
     return new HardwareBuddyController({
       transport: sidecar && sidecar.transport,
       getSessionSnapshot: () => callSafely(options.getSessionSnapshot || (() => ({ sessions: [] })), log) || { sessions: [] },
-      getCurrentState: options.getCurrentState || (() => "idle"),
-      getCurrentSvg: options.getCurrentSvg || (() => null),
       getPendingPermissions,
       getDoNotDisturb: () => !!callSafely(options.getDoNotDisturb || (() => false), log),
       isAgentEnabled: options.isAgentEnabled,
@@ -912,8 +878,7 @@ function createHardwareBuddyAdapter(options = {}) {
     }
 
     try {
-      const isWatch = activeConfig.backend === "watch";
-      const modules = options.coreModules || (isWatch ? loadWatchModules() : loadCoreModules(coreRoot));
+      const modules = options.coreModules || loadCoreModules(coreRoot);
       const HardwareBuddyController = options.HardwareBuddyController || modules.HardwareBuddyController;
       const SidecarClient = options.SidecarClient || modules.SidecarClient;
       if (typeof HardwareBuddyController !== "function" || typeof SidecarClient !== "function") {
@@ -981,8 +946,7 @@ function createHardwareBuddyAdapter(options = {}) {
       // The bridge-core controller captures resolvePermissionEntry at construction
       // time, so permission opt-in changes need a fresh controller. Keep the
       // sidecar and BLE link alive; only the approval plumbing changes.
-      const isWatch = activeConfig.backend === "watch";
-      const modules = options.coreModules || (isWatch ? loadWatchModules() : loadCoreModules(coreRoot));
+      const modules = options.coreModules || loadCoreModules(coreRoot);
       const HardwareBuddyController = options.HardwareBuddyController || modules.HardwareBuddyController;
       if (activeConfig.permissionsEnabled && typeof options.resolvePermissionEntry !== "function") {
         log("permissions requested but resolvePermissionEntry is unavailable; hardware permission replies will be ignored");
