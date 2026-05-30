@@ -416,12 +416,26 @@ class BleService : Service() {
         try {
             val msg = WatchMessage.parse(JSONObject(text))
             if (msg != null) {
-                if (msg is WatchMessage.CompactState) cacheState(msg)
+                if (msg is WatchMessage.CompactState) {
+                    val prev = lastCompactState
+                    cacheState(msg)
+                    updateNotification(msg.state)
+                    if (prev != null && prev.state != msg.state) {
+                        bringToForeground()
+                    }
+                }
                 handler.post { onWatchMessage?.invoke(msg) }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Bad state payload: ${e.message}")
         }
+    }
+
+    private fun bringToForeground() {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+        startActivity(intent)
     }
 
     private fun handleApprovalRequestWrite(data: ByteArray) {
