@@ -89,6 +89,7 @@ async def run(args):
     client = None
     connected_name = None
     last_address = None
+    last_snapshot_data = None
     reconnect_attempt = 0
     reconnect_task = None
     stopping = False
@@ -170,6 +171,11 @@ async def run(args):
             last_address = address
             reconnect_attempt = 0
             emit_status(True, connected_name)
+            if last_snapshot_data is not None:
+                try:
+                    await c.write_gatt_char(CWD1_STATE, last_snapshot_data)
+                except Exception:
+                    pass
         except Exception as e:
             emit_error("CONNECT_FAILED", str(e))
 
@@ -205,11 +211,12 @@ async def run(args):
         msg_type = msg.get("type", "")
 
         if msg_type == "snapshot":
+            payload = msg.get("payload", msg)
+            data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+            last_snapshot_data = data.encode("utf-8")
             if client and client.is_connected:
-                payload = msg.get("payload", msg)
-                data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
                 try:
-                    await client.write_gatt_char(CWD1_STATE, data.encode("utf-8"))
+                    await client.write_gatt_char(CWD1_STATE, last_snapshot_data)
                 except Exception as e:
                     emit_error("WRITE_FAILED", str(e))
 
