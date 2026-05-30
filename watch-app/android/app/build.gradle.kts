@@ -5,11 +5,11 @@ plugins {
 
 android {
     namespace = "com.clawd.watch"
-    compileSdk = 34 // Compile against 34 for androidx compat; targetSdk=30 for OPPO Watch runtime
+    compileSdk = 34
 
     defaultConfig {
         applicationId = "com.clawd.watch"
-        minSdk = 26     // Android 8.0 — covers oldest OPPO Watch
+        minSdk = 26
         targetSdk = 30  // Android 11 (R)
         versionCode = 1
         versionName = "0.1.0"
