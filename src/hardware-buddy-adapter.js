@@ -226,6 +226,13 @@ function defaultCoreRoot(env = process.env) {
     || path.resolve(__dirname, "..", "..", "clawstick");
 }
 
+function loadWatchModules() {
+  return {
+    HardwareBuddyController: require("./watch-controller").WatchController,
+    SidecarClient: require("./watch-sidecar-client").WatchSidecarClient,
+  };
+}
+
 function loadCoreModules(coreRoot) {
   const controllerPath = path.join(coreRoot, "src", "hardware-buddy", "controller.js");
   const sidecarPath = path.join(coreRoot, "src", "hardware-buddy", "sidecar-client.js");
@@ -259,6 +266,11 @@ function loadQuickCommandModules(coreRoot) {
       createMemoryQuickCommandSink: (options) => new FallbackMemoryQuickCommandSink(options),
     };
   }
+}
+
+function defaultWatchSidecarScript(env = process.env) {
+  return env.CLAWD_WATCH_BUDDY_SIDECAR
+    || path.join(__dirname, "..", "scripts", "watch_buddy_bridge.py");
 }
 
 function defaultSidecarScript(coreRoot, env = process.env) {
@@ -298,8 +310,8 @@ function readRuntimeConfig(options, env = process.env) {
   if (env.CLAWD_HARDWARE_BUDDY_NAME_PREFIX) config.namePrefix = String(env.CLAWD_HARDWARE_BUDDY_NAME_PREFIX).trim();
   if (options.autoConnectAddress) config.address = String(options.autoConnectAddress).trim();
 
-  config.backend = config.backend === "fake" ? "fake" : "bleak";
-  if (!config.namePrefix) config.namePrefix = "Clawstick";
+  config.backend = config.backend === "fake" ? "fake" : config.backend === "watch" ? "watch" : "bleak";
+  if (!config.namePrefix) config.namePrefix = config.backend === "watch" ? "Clawd" : "Clawstick";
   config.autoConnectByNamePrefix = !config.address && (hasSettings || !!env.CLAWD_HARDWARE_BUDDY_NAME_PREFIX);
   return config;
 }
@@ -311,8 +323,11 @@ function buildSidecarArgs(options) {
     config,
   } = options;
   const backend = config.backend || env.CLAWD_HARDWARE_BUDDY_BACKEND || "bleak";
+  const script = backend === "watch"
+    ? defaultWatchSidecarScript(env)
+    : defaultSidecarScript(coreRoot, env);
   const args = [
-    defaultSidecarScript(coreRoot, env),
+    script,
     "--backend",
     backend,
   ];
@@ -324,6 +339,9 @@ function buildSidecarArgs(options) {
   }
   if (config.namePrefix) {
     args.push("--name-prefix", config.namePrefix);
+  }
+  if (backend === "watch" && config.address) {
+    args.push("--address", config.address);
   }
   if (backend === "fake"
     && /^(true|false)$/i.test(String(env.CLAWD_HARDWARE_BUDDY_FAKE_SECURE || "").trim())) {
@@ -836,6 +854,8 @@ function createHardwareBuddyAdapter(options = {}) {
     return new HardwareBuddyController({
       transport: sidecar && sidecar.transport,
       getSessionSnapshot: () => callSafely(options.getSessionSnapshot || (() => ({ sessions: [] })), log) || { sessions: [] },
+      getCurrentState: options.getCurrentState || (() => "idle"),
+      getCurrentSvg: options.getCurrentSvg || (() => null),
       getPendingPermissions,
       getDoNotDisturb: () => !!callSafely(options.getDoNotDisturb || (() => false), log),
       isAgentEnabled: options.isAgentEnabled,
@@ -878,7 +898,8 @@ function createHardwareBuddyAdapter(options = {}) {
     }
 
     try {
-      const modules = options.coreModules || loadCoreModules(coreRoot);
+      const isWatch = activeConfig.backend === "watch";
+      const modules = options.coreModules || (isWatch ? loadWatchModules() : loadCoreModules(coreRoot));
       const HardwareBuddyController = options.HardwareBuddyController || modules.HardwareBuddyController;
       const SidecarClient = options.SidecarClient || modules.SidecarClient;
       if (typeof HardwareBuddyController !== "function" || typeof SidecarClient !== "function") {
@@ -946,7 +967,8 @@ function createHardwareBuddyAdapter(options = {}) {
       // The bridge-core controller captures resolvePermissionEntry at construction
       // time, so permission opt-in changes need a fresh controller. Keep the
       // sidecar and BLE link alive; only the approval plumbing changes.
-      const modules = options.coreModules || loadCoreModules(coreRoot);
+      const isWatch = activeConfig.backend === "watch";
+      const modules = options.coreModules || (isWatch ? loadWatchModules() : loadCoreModules(coreRoot));
       const HardwareBuddyController = options.HardwareBuddyController || modules.HardwareBuddyController;
       if (activeConfig.permissionsEnabled && typeof options.resolvePermissionEntry !== "function") {
         log("permissions requested but resolvePermissionEntry is unavailable; hardware permission replies will be ignored");

@@ -1,0 +1,212 @@
+#!/usr/bin/env python3
+"""
+Watch Buddy Bridge — BLE Central sidecar for the Clawd watch backend.
+
+Connects to a Wear OS watch running the Clawd app (BLE Peripheral) and
+forwards session snapshots from stdin to GATT characteristic CWD1, approval
+requests to CWD2, and relays approval responses from CWD3 back to stdout.
+
+stdio protocol (newline-delimited JSON, same as clawstick sidecar):
+
+  stdin  <- {"type":"snapshot","payload":{...}}
+  stdin  <- {"type":"approval_request","requestId":"...","tool":"Bash",...}
+  stdin  <- {"type":"connect","address":"AA:BB:CC:DD:EE:FF"}
+  stdin  <- {"type":"scan"}
+  stdin  <- {"type":"stop"}
+
+  stdout -> {"type":"status","connected":true,"deviceName":"OPPO Watch"}
+  stdout -> {"type":"devices","items":[{"address":"...","name":"...","rssi":-54}]}
+  stdout -> {"type":"approval_response","requestId":"...","decision":"allow"}
+  stdout -> {"type":"error","code":"...","message":"..."}
+"""
+
+import asyncio
+import json
+import sys
+import argparse
+
+from bleak import BleakClient, BleakScanner
+
+CWD_SERVICE = "00000cd0-0000-1000-8000-00805f9b34fb"
+CWD1_STATE = "00000cd1-0000-1000-8000-00805f9b34fb"
+CWD2_APPROVAL_REQ = "00000cd2-0000-1000-8000-00805f9b34fb"
+CWD3_APPROVAL_RESP = "00000cd3-0000-1000-8000-00805f9b34fb"
+CWD4_META = "00000cd4-0000-1000-8000-00805f9b34fb"
+
+
+def emit(obj):
+    line = json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
+    sys.stdout.write(line + "\n")
+    sys.stdout.flush()
+
+
+def emit_status(connected, device_name=None):
+    msg = {"type": "status", "connected": connected}
+    if device_name:
+        msg["deviceName"] = device_name
+    emit(msg)
+
+
+def emit_error(code, message):
+    emit({"type": "error", "code": code, "message": message})
+
+
+async def scan_for_watch(name_prefix, timeout=10.0):
+    devices_advs = await BleakScanner.discover(timeout=timeout, return_adv=True)
+    results = []
+    for addr, (device, adv) in devices_advs.items():
+        uuids = adv.service_uuids or []
+        name = device.name or ""
+        if CWD_SERVICE in uuids or (name_prefix and name.startswith(name_prefix)):
+            results.append({
+                "address": device.address,
+                "name": name,
+                "rssi": adv.rssi,
+            })
+    return results
+
+
+async def read_stdin_lines(queue):
+    loop = asyncio.get_event_loop()
+    reader = asyncio.StreamReader()
+    await loop.connect_read_pipe(lambda: asyncio.StreamReaderProtocol(reader), sys.stdin)
+    while True:
+        line = await reader.readline()
+        if not line:
+            await queue.put(None)
+            break
+        text = line.decode("utf-8", errors="replace").strip()
+        if text:
+            try:
+                await queue.put(json.loads(text))
+            except json.JSONDecodeError:
+                pass
+
+
+async def run(args):
+    client = None
+    connected_name = None
+    stdin_queue = asyncio.Queue()
+
+    asyncio.ensure_future(read_stdin_lines(stdin_queue))
+
+    def on_disconnect(_client):
+        nonlocal client
+        client = None
+        emit_status(False)
+        if not args.address:
+            emit({"type": "devices", "items": []})
+
+    def on_cwd3_notify(_sender, data):
+        try:
+            resp = json.loads(data.decode("utf-8"))
+            emit({
+                "type": "approval_response",
+                "requestId": resp.get("requestId", ""),
+                "decision": resp.get("decision", "deny"),
+            })
+        except Exception:
+            pass
+
+    async def connect_to(address):
+        nonlocal client, connected_name
+        if client and client.is_connected:
+            await client.disconnect()
+
+        try:
+            c = BleakClient(address, disconnected_callback=on_disconnect)
+            await c.connect(timeout=args.connect_timeout)
+            if not c.is_connected:
+                emit_error("CONNECT_FAILED", f"failed to connect to {address}")
+                return
+
+            meta_bytes = await c.read_gatt_char(CWD4_META)
+            meta = json.loads(meta_bytes.decode("utf-8"))
+            connected_name = meta.get("deviceName", address)
+
+            await c.start_notify(CWD3_APPROVAL_RESP, on_cwd3_notify)
+
+            client = c
+            emit_status(True, connected_name)
+        except Exception as e:
+            emit_error("CONNECT_FAILED", str(e))
+
+    async def do_scan():
+        try:
+            items = await scan_for_watch(args.name_prefix, timeout=args.scan_timeout)
+            emit({"type": "devices", "items": items})
+            if args.address:
+                for item in items:
+                    if item["address"].lower() == args.address.lower():
+                        await connect_to(item["address"])
+                        return
+            elif len(items) == 1:
+                await connect_to(items[0]["address"])
+        except Exception as e:
+            emit_error("SCAN_FAILED", str(e))
+
+    # Initial action: connect directly or scan
+    if args.address:
+        await connect_to(args.address)
+    else:
+        await do_scan()
+
+    # Main loop: read stdin commands
+    while True:
+        msg = await stdin_queue.get()
+        if msg is None:
+            break
+
+        msg_type = msg.get("type", "")
+
+        if msg_type == "snapshot":
+            if client and client.is_connected:
+                payload = msg.get("payload", msg)
+                data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+                try:
+                    await client.write_gatt_char(CWD1_STATE, data.encode("utf-8"))
+                except Exception as e:
+                    emit_error("WRITE_FAILED", str(e))
+
+        elif msg_type == "approval_request":
+            if client and client.is_connected:
+                req = {k: v for k, v in msg.items() if k != "type"}
+                data = json.dumps(req, ensure_ascii=False, separators=(",", ":"))
+                try:
+                    await client.write_gatt_char(CWD2_APPROVAL_REQ, data.encode("utf-8"))
+                except Exception as e:
+                    emit_error("WRITE_FAILED", str(e))
+
+        elif msg_type == "connect":
+            addr = msg.get("address", "")
+            if addr:
+                await connect_to(addr)
+
+        elif msg_type == "scan":
+            await do_scan()
+
+        elif msg_type == "stop":
+            break
+
+    if client and client.is_connected:
+        await client.disconnect()
+    emit_status(False)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Watch Buddy Bridge")
+    parser.add_argument("--backend", default="watch")
+    parser.add_argument("--name-prefix", default="Clawd")
+    parser.add_argument("--address", default="")
+    parser.add_argument("--scan-timeout", type=float, default=10.0)
+    parser.add_argument("--connect-timeout", type=float, default=15.0)
+    args = parser.parse_args()
+
+    try:
+        asyncio.run(run(args))
+    except KeyboardInterrupt:
+        pass
+
+
+if __name__ == "__main__":
+    main()

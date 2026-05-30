@@ -2298,6 +2298,8 @@ hardwareBuddyAdapter = createHardwareBuddyAdapter({
   env: process.env,
   getSettings: () => _settingsController.get("hardwareBuddy"),
   getSessionSnapshot: () => _state.buildSessionSnapshot(),
+  getCurrentState: () => _state.getCurrentState(),
+  getCurrentSvg: () => _state.getCurrentSvg(),
   getPendingPermissions: () => pendingPermissions,
   getDoNotDisturb: () => doNotDisturb,
   isAgentEnabled: (agentId) => _isAgentEnabled({ agents: _settingsController.get("agents") }, agentId),

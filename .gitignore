@@ -102,6 +102,7 @@ scripts/*
 !scripts/export-agent-icons.js
 !scripts/verify-sidecar-binaries.js
 !scripts/fetch-sidecar-binaries.js
+!scripts/watch_buddy_bridge.py
 
 # oh-my-cursor state
 .omc/

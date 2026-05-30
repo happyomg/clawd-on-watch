@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black">
+
+    <com.clawd.watch.renderer.SvgPetView
+        android:id="@+id/pet_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Connection indicator pill (top center) -->
+    <TextView
+        android:id="@+id/connection_indicator"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="6dp"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:paddingTop="2dp"
+        android:paddingBottom="2dp"
+        android:background="@drawable/pill_indicator"
+        android:text="⬤"
+        android:textSize="9sp"
+        android:textColor="#CCFFFFFF"
+        android:gravity="center" />
+
+    <!-- State chip pill (bottom center) -->
+    <TextView
+        android:id="@+id/state_chip"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="10dp"
+        android:paddingStart="10dp"
+        android:paddingEnd="10dp"
+        android:paddingTop="2dp"
+        android:paddingBottom="2dp"
+        android:background="@drawable/pill_chip"
+        android:textSize="10sp"
+        android:textColor="#E6FFFFFF"
+        android:gravity="center"
+        android:visibility="gone" />
+
+</FrameLayout>
