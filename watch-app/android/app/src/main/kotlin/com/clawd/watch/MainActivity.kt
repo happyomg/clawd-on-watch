@@ -31,8 +31,6 @@ class MainActivity : AppCompatActivity() {
     private var flickDetector: FlickDetector? = null
     private var bleConnected = false
 
-    private var wakeLock: android.os.PowerManager.WakeLock? = null
-
     private var pendingApprovalRequestId: String? = null
     private var pendingApprovalRisk: String? = null
     private var demoMode = false
@@ -101,25 +99,6 @@ class MainActivity : AppCompatActivity() {
             if (!demoMode) showContextMenu()
             true
         }
-    }
-
-    @Suppress("DEPRECATION")
-    override fun onResume() {
-        super.onResume()
-        val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
-        wakeLock = pm.newWakeLock(
-            android.os.PowerManager.SCREEN_BRIGHT_WAKE_LOCK or android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP,
-            "clawd:screen-on"
-        )
-        wakeLock?.acquire(30 * 60 * 1000L)
-    }
-
-    override fun onPause() {
-        wakeLock?.let {
-            if (it.isHeld) it.release()
-        }
-        wakeLock = null
-        super.onPause()
     }
 
     override fun onStart() {

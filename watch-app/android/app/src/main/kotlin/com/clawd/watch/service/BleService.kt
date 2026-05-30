@@ -453,17 +453,6 @@ class BleService : Service() {
 
     @Suppress("DEPRECATION")
     private fun bringToForeground() {
-        // Wake the screen
-        val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
-        val wl = pm.newWakeLock(
-            android.os.PowerManager.SCREEN_BRIGHT_WAKE_LOCK
-                or android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP
-                or android.os.PowerManager.ON_AFTER_RELEASE,
-            "clawd:state-change"
-        )
-        wl.acquire(3000L)
-
-        // Vibrate to alert the user
         vibrateNotification()
 
         // Try direct startActivity (works if SYSTEM_ALERT_WINDOW is granted)
