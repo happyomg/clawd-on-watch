@@ -102,7 +102,25 @@ class BleService : Service() {
 
     private var lastCompactState: WatchMessage.CompactState? = null
 
-    fun getLastState(): WatchMessage.CompactState? = lastCompactState
+    fun getLastState(): WatchMessage.CompactState? {
+        if (lastCompactState != null) return lastCompactState
+        val prefs = getSharedPreferences("clawd_state", Context.MODE_PRIVATE)
+        val s = prefs.getString("last_s", null) ?: return null
+        return WatchMessage.CompactState(
+            state = s,
+            svg = prefs.getString("last_svg", null),
+            activeCount = prefs.getInt("last_n", 0)
+        )
+    }
+
+    private fun cacheState(state: WatchMessage.CompactState) {
+        lastCompactState = state
+        getSharedPreferences("clawd_state", Context.MODE_PRIVATE).edit()
+            .putString("last_s", state.state)
+            .putString("last_svg", state.svg)
+            .putInt("last_n", state.activeCount)
+            .apply()
+    }
 
     fun isConnected(): Boolean = connectedDevice != null
 
@@ -398,7 +416,7 @@ class BleService : Service() {
         try {
             val msg = WatchMessage.parse(JSONObject(text))
             if (msg != null) {
-                if (msg is WatchMessage.CompactState) lastCompactState = msg
+                if (msg is WatchMessage.CompactState) cacheState(msg)
                 handler.post { onWatchMessage?.invoke(msg) }
             }
         } catch (e: Exception) {
