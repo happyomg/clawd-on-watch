@@ -454,6 +454,7 @@ class BleService : Service() {
 
     @Suppress("DEPRECATION")
     private fun bringToForeground() {
+        // Wake the screen
         val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
         val wl = pm.newWakeLock(
             android.os.PowerManager.SCREEN_BRIGHT_WAKE_LOCK
@@ -462,10 +463,21 @@ class BleService : Service() {
             "clawd:state-change"
         )
         wl.acquire(3000L)
-        val intent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+
+        // Vibrate to alert the user
+        vibrateNotification()
+
+        // Try direct startActivity (works if SYSTEM_ALERT_WINDOW is granted)
+        try {
+            val intent = Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            Log.w(TAG, "startActivity failed: ${e.message}")
         }
-        startActivity(intent)
     }
 
     private fun handleApprovalRequestWrite(data: ByteArray) {

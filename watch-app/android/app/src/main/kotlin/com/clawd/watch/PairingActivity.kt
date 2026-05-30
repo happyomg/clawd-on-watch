@@ -5,11 +5,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
-import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
 import android.view.View
@@ -32,7 +30,6 @@ class PairingActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "PairingActivity"
         private const val REQ_PERMS = 1
-        private const val REQ_OVERLAY = 2
     }
 
     private lateinit var statusText: TextView
@@ -125,27 +122,7 @@ class PairingActivity : AppCompatActivity() {
             requestPermissions()
             return
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
-            try {
-                val intent = Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:$packageName")
-                )
-                startActivityForResult(intent, REQ_OVERLAY)
-                return
-            } catch (e: Exception) {
-                Log.w(TAG, "Overlay settings unavailable: ${e.message}")
-            }
-        }
         startServiceAndBind()
-    }
-
-    @Suppress("DEPRECATION")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQ_OVERLAY) {
-            startServiceAndBind()
-        }
     }
 
     private fun requiredPermissions(): Array<String> =
