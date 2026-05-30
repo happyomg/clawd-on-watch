@@ -8,8 +8,7 @@ import android.content.ServiceConnection
 import android.os.Bundle
 import android.os.IBinder
 import android.widget.TextView
-import androidx.fragment.app.FragmentActivity
-import androidx.wear.ambient.AmbientModeSupport
+import androidx.appcompat.app.AppCompatActivity
 import com.clawd.watch.data.ApprovalResponse
 import com.clawd.watch.data.PairingStore
 import com.clawd.watch.data.WatchMessage
@@ -21,8 +20,7 @@ import com.clawd.watch.power.PowerManager
 import com.clawd.watch.renderer.SvgPetView
 import com.clawd.watch.service.BleService
 
-@Suppress("DEPRECATION")
-class MainActivity : FragmentActivity(), AmbientModeSupport.AmbientCallbackProvider {
+class MainActivity : AppCompatActivity() {
 
     private lateinit var petView: SvgPetView
     private lateinit var connectionIndicator: TextView
@@ -32,7 +30,8 @@ class MainActivity : FragmentActivity(), AmbientModeSupport.AmbientCallbackProvi
     private var bound = false
     private var flickDetector: FlickDetector? = null
     private var bleConnected = false
-    private var isAmbient = false
+
+    private var wakeLock: android.os.PowerManager.WakeLock? = null
 
     private var pendingApprovalRequestId: String? = null
     private var pendingApprovalRisk: String? = null
@@ -75,9 +74,6 @@ class MainActivity : FragmentActivity(), AmbientModeSupport.AmbientCallbackProvi
             return
         }
 
-        // Enable ambient mode — keeps app in foreground when screen dims
-        AmbientModeSupport.attach(this)
-
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(R.layout.activity_main)
 
@@ -107,6 +103,25 @@ class MainActivity : FragmentActivity(), AmbientModeSupport.AmbientCallbackProvi
         }
     }
 
+    @Suppress("DEPRECATION")
+    override fun onResume() {
+        super.onResume()
+        val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+        wakeLock = pm.newWakeLock(
+            android.os.PowerManager.SCREEN_BRIGHT_WAKE_LOCK or android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP,
+            "clawd:screen-on"
+        )
+        wakeLock?.acquire()
+    }
+
+    override fun onPause() {
+        wakeLock?.let {
+            if (it.isHeld) it.release()
+        }
+        wakeLock = null
+        super.onPause()
+    }
+
     override fun onStart() {
         super.onStart()
         if (PairingStore.isPaired(this)) {
@@ -132,51 +147,13 @@ class MainActivity : FragmentActivity(), AmbientModeSupport.AmbientCallbackProvi
         super.onStop()
     }
 
-    // ── Ambient Mode ──
-
-    override fun getAmbientCallback(): AmbientModeSupport.AmbientCallback = object : AmbientModeSupport.AmbientCallback() {
-        override fun onEnterAmbient(ambientDetails: Bundle?) {
-            isAmbient = true
-            petView.pause()
-            flickDetector?.stop()
-            // Low-power: black background, hide animation, keep state chip visible
-            window.decorView.setBackgroundColor(0xFF000000.toInt())
-            petView.alpha = 0.3f
-            connectionIndicator.setTextColor(0xFF666666.toInt())
-        }
-
-        override fun onExitAmbient() {
-            isAmbient = false
-            petView.resume()
-            flickDetector?.start()
-            window.decorView.setBackgroundColor(0x00000000.toInt())
-            petView.alpha = if (bleConnected) 1.0f else 0.5f
-            connectionIndicator.setTextColor(
-                if (bleConnected) StateChipConfig.COLOR_INDICATOR_TEXT else StateChipConfig.COLOR_DISCONNECTED
-            )
-        }
-
-        override fun onUpdateAmbient() {
-            // Refresh state chip in ambient mode (called ~once per minute)
-            val cached = bleService?.getLastState()
-            if (cached != null) {
-                val state = ClawdState.fromStringOrIdle(cached.state)
-                updateStateChip(state)
-            }
-        }
-    }
-
-    // ── Connection state ──
-
     private fun updateConnectionState(connected: Boolean) {
         bleConnected = connected
         connectionIndicator.text = if (connected) "Connected" else "Disconnected"
         connectionIndicator.setTextColor(
             if (connected) StateChipConfig.COLOR_INDICATOR_TEXT else StateChipConfig.COLOR_DISCONNECTED
         )
-        if (!isAmbient) {
-            petView.alpha = if (connected) 1.0f else 0.5f
-        }
+        petView.alpha = if (connected) 1.0f else 0.5f
     }
 
     private fun updateStateChip(state: ClawdState) {
@@ -196,7 +173,7 @@ class MainActivity : FragmentActivity(), AmbientModeSupport.AmbientCallbackProvi
         }
     }
 
-    // ── Message handling (thin: just render what desktop says) ──
+    // ── Message handling ──
 
     private fun handleMessage(msg: WatchMessage) {
         when (msg) {
@@ -208,9 +185,7 @@ class MainActivity : FragmentActivity(), AmbientModeSupport.AmbientCallbackProvi
     private fun handleCompactState(msg: WatchMessage.CompactState) {
         val state = ClawdState.fromStringOrIdle(msg.state)
         val svg = msg.svg ?: ThemeConfig.resolveSvg(state, msg.activeCount, null)
-        if (!isAmbient) {
-            petView.setSvgImmediate(svg)
-        }
+        petView.setSvgImmediate(svg)
         petView.state = state
         petView.activeSessionCount = msg.activeCount
         updateStateChip(state)
@@ -292,7 +267,6 @@ class MainActivity : FragmentActivity(), AmbientModeSupport.AmbientCallbackProvi
     }
 
     private fun handlePowerModeChange(mode: PowerManager.PowerMode) {
-        if (isAmbient) return
         when (mode) {
             PowerManager.PowerMode.SCREEN_OFF -> { petView.pause(); flickDetector?.stop() }
             PowerManager.PowerMode.LOW_BATTERY,
