@@ -518,6 +518,8 @@ class BleService : Service() {
         if (cwd3Subscribers.contains(device.address)) {
             server.notifyCharacteristicChanged(device, char, false)
         }
+        val state = lastCompactState?.state ?: "idle"
+        updateNotification(state)
     }
 
     // ── Approval dispatch ──
@@ -534,7 +536,30 @@ class BleService : Service() {
             msg.timeoutMs?.let { putExtra("timeoutMs", it) }
             msg.expiresAt?.let { putExtra("expiresAt", it) }
         }
-        startActivity(intent)
+
+        // Try direct launch (works when app is in foreground)
+        try { startActivity(intent) } catch (_: Exception) {}
+
+        // Update indicator notification to point to ApprovalActivity
+        // so tapping the indicator opens the approval screen
+        val pending = PendingIntent.getActivity(
+            this, 2, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val riskLabel = if (msg.risk == "high") "⚠ HIGH" else msg.risk
+        val extras = Bundle().apply { putBoolean("show_heytap_indicator", true) }
+        val notification = Notification.Builder(this, CHANNEL_ID)
+            .setContentTitle("Approve: ${msg.tool}")
+            .setContentText("$riskLabel — ${msg.command.take(50)}")
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setContentIntent(pending)
+            .setOngoing(true)
+            .setCategory("navigation")
+            .addExtras(extras)
+            .build()
+        getSystemService(NotificationManager::class.java)
+            .notify(NOTIFICATION_ID, notification)
+
         vibrateNotification()
     }
 
