@@ -14,7 +14,7 @@ stdio protocol (newline-delimited JSON, same as clawstick sidecar):
   stdin  <- {"type":"scan"}
   stdin  <- {"type":"stop"}
 
-  stdout -> {"type":"status","connected":true,"deviceName":"OPPO Watch"}
+  stdout -> {"type":"status","connected":true,"deviceName":"Android Watch"}
   stdout -> {"type":"devices","items":[{"address":"...","name":"...","rssi":-54}]}
   stdout -> {"type":"approval_response","requestId":"...","decision":"allow"}
   stdout -> {"type":"error","code":"...","message":"..."}
