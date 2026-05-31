@@ -4,7 +4,7 @@ class WatchController {
   constructor(options = {}) {
     this.transport = options.transport;
     this.getCurrentState = options.getCurrentState || (() => "idle");
-    this.getCurrentSvg = options.getCurrentSvg || (() => null);
+    this.getThemeFingerprint = options.getThemeFingerprint || (() => null);
     this.getSessionSnapshot = options.getSessionSnapshot || (() => ({ sessions: [] }));
     this.getPendingPermissions = options.getPendingPermissions || (() => []);
     this.buildApprovalId = options.buildApprovalId || ((p) => p.requestId || p.id || "");
@@ -46,11 +46,17 @@ class WatchController {
 
   _buildCompactPayload() {
     const state = this.getCurrentState();
-    const svg = this.getCurrentSvg();
     const snapshot = this.getSessionSnapshot();
     const sessions = snapshot && Array.isArray(snapshot.sessions) ? snapshot.sessions : [];
     const nonIdle = sessions.filter((s) => s.state !== "idle" && s.state !== "sleeping" && !s.headless);
-    return { s: state, svg: svg || null, n: nonIdle.length };
+    // Theme-agnostic payload: the watch resolves `s` + `n` to a concrete SVG
+    // via its local theme manifest, so we no longer send a filename. `th` is
+    // the active theme fingerprint, used by the watch to detect a stale theme
+    // and trigger a sync. Omitted when no theme is active.
+    const payload = { s: state, n: nonIdle.length };
+    const th = this.getThemeFingerprint();
+    if (th) payload.th = th;
+    return payload;
   }
 
   _pushState() {

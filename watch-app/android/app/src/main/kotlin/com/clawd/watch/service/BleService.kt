@@ -35,6 +35,7 @@ import com.clawd.watch.MainActivity
 import com.clawd.watch.R
 import com.clawd.watch.data.ApprovalResponse
 import com.clawd.watch.data.WatchMessage
+import com.clawd.watch.domain.ThemeConfig
 import com.clawd.watch.power.PowerManager
 import org.json.JSONObject
 import java.util.UUID
@@ -125,8 +126,8 @@ class BleService : Service() {
         val s = prefs.getString("last_s", null) ?: return null
         return WatchMessage.CompactState(
             state = s,
-            svg = prefs.getString("last_svg", null),
-            activeCount = prefs.getInt("last_n", 0)
+            activeCount = prefs.getInt("last_n", 0),
+            themeHash = prefs.getString("last_th", null)
         )
     }
 
@@ -134,8 +135,8 @@ class BleService : Service() {
         lastCompactState = state
         getSharedPreferences("clawd_state", Context.MODE_PRIVATE).edit()
             .putString("last_s", state.state)
-            .putString("last_svg", state.svg)
             .putInt("last_n", state.activeCount)
+            .putString("last_th", state.themeHash)
             .apply()
     }
 
@@ -316,6 +317,9 @@ class BleService : Service() {
                         put("deviceName", Build.MODEL)
                         put("version", "0.1.0")
                         put("role", "peripheral")
+                        // Active theme fingerprint — desktop compares this to its
+                        // own theme on connect to decide whether to push a sync.
+                        put("themeHash", ThemeConfig.active.hash)
                     }.toString().toByteArray(Charsets.UTF_8)
                     val chunk = if (offset < meta.size) meta.copyOfRange(offset, meta.size) else ByteArray(0)
                     gattServer?.sendResponse(device, requestId, android.bluetooth.BluetoothGatt.GATT_SUCCESS, offset, chunk)

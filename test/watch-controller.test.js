@@ -22,13 +22,13 @@ describe("WatchController", () => {
     ctrl.stop();
   });
 
-  it("should push compact payload when transport is connected", () => {
+  it("should push theme-agnostic compact payload {s,n,th} when connected", () => {
     const transport = createFakeTransport();
     transport.connected = true;
     const ctrl = new WatchController({
       transport,
       getCurrentState: () => "working",
-      getCurrentSvg: () => "clawd-working-typing.svg",
+      getThemeFingerprint: () => "a3f8c1",
       getSessionSnapshot: () => ({
         sessions: [
           { state: "working", headless: false },
@@ -40,8 +40,46 @@ describe("WatchController", () => {
     ctrl.start();
     assert.strictEqual(transport.sent.length, 1);
     assert.strictEqual(transport.sent[0].s, "working");
-    assert.strictEqual(transport.sent[0].svg, "clawd-working-typing.svg");
     assert.strictEqual(transport.sent[0].n, 1);
+    assert.strictEqual(transport.sent[0].th, "a3f8c1");
+    // The desktop no longer dictates a filename — the watch resolves it.
+    assert.strictEqual("svg" in transport.sent[0], false);
+    ctrl.stop();
+  });
+
+  it("should omit th when no theme fingerprint is available", () => {
+    const transport = createFakeTransport();
+    transport.connected = true;
+    const ctrl = new WatchController({
+      transport,
+      getCurrentState: () => "idle",
+      getThemeFingerprint: () => null,
+      getSessionSnapshot: () => ({ sessions: [] }),
+      keepaliveMs: 100000,
+    });
+    ctrl.start();
+    assert.strictEqual(transport.sent.length, 1);
+    assert.strictEqual("th" in transport.sent[0], false);
+    ctrl.stop();
+  });
+
+  it("should re-push when only the theme fingerprint changes", () => {
+    const transport = createFakeTransport();
+    transport.connected = true;
+    let th = "a3f8c1";
+    const ctrl = new WatchController({
+      transport,
+      getCurrentState: () => "idle",
+      getThemeFingerprint: () => th,
+      getSessionSnapshot: () => ({ sessions: [] }),
+      keepaliveMs: 100000,
+    });
+    ctrl.start();
+    assert.strictEqual(transport.sent.length, 1);
+    th = "b7e2d4";
+    ctrl.notifyStateChanged();
+    assert.strictEqual(transport.sent.length, 2);
+    assert.strictEqual(transport.sent[1].th, "b7e2d4");
     ctrl.stop();
   });
 

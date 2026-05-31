@@ -5,7 +5,7 @@
     android:layout_height="match_parent"
     android:background="@android:color/black">
 
-    <com.clawd.watch.renderer.SvgPetView
+    <com.clawd.watch.renderer.PetView
         android:id="@+id/pet_view"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />

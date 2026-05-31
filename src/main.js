@@ -2331,6 +2331,7 @@ unsubscribeHardwareBuddySettings = _settingsController.subscribeKey("hardwareBud
 // ── Watch adapter (independent from Hardware Buddy) ──
 
 const { createWatchAdapter } = require("./watch-adapter");
+const { computeThemeFingerprint } = require("./watch-theme-fingerprint");
 let watchAdapter = null;
 let watchStatus = null;
 let unsubscribeWatchSettings = null;
@@ -2352,7 +2353,15 @@ watchAdapter = createWatchAdapter({
   getSettings: () => _settingsController.get("watch"),
   getSessionSnapshot: () => _state.buildSessionSnapshot(),
   getCurrentState: () => _state.getCurrentState(),
-  getCurrentSvg: () => _state.getCurrentSvg(),
+  getThemeFingerprint: () => {
+    try {
+      const theme = getActiveTheme();
+      if (!theme) return null;
+      return computeThemeFingerprint(themeRuntime.getActiveThemeId("clawd"), theme.states);
+    } catch (_) {
+      return null;
+    }
+  },
   getPendingPermissions: () => pendingPermissions,
   getDoNotDisturb: () => doNotDisturb,
   resolvePermissionEntry: (...args) => resolvePermissionEntry(...args),

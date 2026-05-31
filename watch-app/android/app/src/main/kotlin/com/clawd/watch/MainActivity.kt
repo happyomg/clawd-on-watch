@@ -17,12 +17,12 @@ import com.clawd.watch.domain.StateChipConfig
 import com.clawd.watch.domain.ThemeConfig
 import com.clawd.watch.gesture.FlickDetector
 import com.clawd.watch.power.PowerManager
-import com.clawd.watch.renderer.SvgPetView
+import com.clawd.watch.renderer.PetView
 import com.clawd.watch.service.BleService
 
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var petView: SvgPetView
+    private lateinit var petView: PetView
     private lateinit var connectionIndicator: TextView
     private lateinit var stateChip: TextView
 
@@ -35,6 +35,7 @@ class MainActivity : AppCompatActivity() {
     private var pendingApprovalRisk: String? = null
     private var demoMode = false
     private var demoStateIndex = 0
+    private var themeSyncNeeded = false
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -164,12 +165,25 @@ class MainActivity : AppCompatActivity() {
 
     private fun handleCompactState(msg: WatchMessage.CompactState) {
         val state = ClawdState.fromStringOrIdle(msg.state)
-        val svg = msg.svg ?: ThemeConfig.resolveSvg(state, msg.activeCount, null)
-        petView.setSvgImmediate(svg)
+        // Theme-agnostic: PetView resolves the SVG locally from state + count
+        // against the active theme manifest. The desktop no longer dictates a
+        // filename.
         petView.state = state
         petView.activeSessionCount = msg.activeCount
         updateStateChip(state)
         updateConnectionState(true)
+        onThemeHash(msg.themeHash)
+    }
+
+    /**
+     * Compare the desktop's theme fingerprint against the watch's active theme.
+     * A mismatch means the watch is rendering a stale theme; the actual sync
+     * (CWD5 transfer) lands in Phase 2 — for now we just record the gap.
+     */
+    private fun onThemeHash(desktopHash: String?) {
+        if (desktopHash.isNullOrEmpty()) return
+        val localHash = ThemeConfig.active.hash
+        themeSyncNeeded = desktopHash != localHash
     }
 
     private fun handleApprovalRequest(msg: WatchMessage.ApprovalRequest) {

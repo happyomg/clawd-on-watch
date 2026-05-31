@@ -194,7 +194,7 @@ function createWatchAdapter(options = {}) {
       transport: sidecar.transport,
       getSessionSnapshot: options.getSessionSnapshot || (() => ({ sessions: [] })),
       getCurrentState: options.getCurrentState || (() => "idle"),
-      getCurrentSvg: options.getCurrentSvg || (() => null),
+      getThemeFingerprint: options.getThemeFingerprint || (() => null),
       getPendingPermissions: () => activeConfig.permissionsEnabled
         ? (typeof options.getPendingPermissions === "function" ? options.getPendingPermissions() : [])
         : [],

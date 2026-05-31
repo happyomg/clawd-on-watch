@@ -5,13 +5,22 @@ import org.json.JSONObject
 sealed class WatchMessage {
 
     /**
-     * Compact state pushed by the desktop: {"s":"working","svg":"clawd-working-typing.svg","n":2}
-     * The watch renders this directly — no local state management.
+     * Compact state pushed by the desktop: {"s":"working","n":2,"th":"79c952"}
+     *
+     * The payload is theme-agnostic — the desktop no longer dictates an SVG
+     * filename. The watch resolves `state` + `activeCount` to a concrete asset
+     * via its local theme manifest (see ThemeConfig). `themeHash` is the active
+     * desktop theme fingerprint; when it differs from the watch's cached theme
+     * the watch knows it is rendering a stale theme and a sync is due.
+     *
+     * `svg` is retained only to parse legacy desktop builds that still send a
+     * filename; current builds omit it and the watch ignores it.
      */
     data class CompactState(
         val state: String,
-        val svg: String?,
-        val activeCount: Int
+        val activeCount: Int,
+        val themeHash: String?,
+        val svg: String? = null
     ) : WatchMessage()
 
     data class ApprovalRequest(
@@ -26,12 +35,13 @@ sealed class WatchMessage {
 
     companion object {
         fun parse(json: JSONObject): WatchMessage? {
-            // Compact state: {"s":"working","svg":"...","n":2}
+            // Compact state: {"s":"working","n":2,"th":"79c952"}
             if (json.has("s")) {
                 return CompactState(
                     state = json.getString("s"),
-                    svg = if (json.isNull("svg")) null else json.optString("svg", null),
-                    activeCount = json.optInt("n", 0)
+                    activeCount = json.optInt("n", 0),
+                    themeHash = if (json.isNull("th")) null else json.optString("th"),
+                    svg = if (json.isNull("svg")) null else json.optString("svg")
                 )
             }
 
