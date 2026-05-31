@@ -113,6 +113,11 @@ async def run(args):
     stdin_task = asyncio.ensure_future(read_stdin_lines(stdin_queue, on_eof=on_stdin_eof))
     stdin_task.add_done_callback(lambda t: t.exception() if not t.cancelled() and t.exception() else None)
 
+    import signal
+    loop = asyncio.get_event_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, lambda: stdin_queue.put_nowait(None))
+
     async def schedule_reconnect():
         nonlocal reconnect_task
         if stopping or reconnect_task is not None:
@@ -309,7 +314,6 @@ async def run(args):
 
 
 def main():
-    import signal
     parser = argparse.ArgumentParser(description="Watch Buddy Bridge")
     parser.add_argument("--backend", default="watch")
     parser.add_argument("--name-prefix", default="Clawd")
@@ -318,13 +322,9 @@ def main():
     parser.add_argument("--connect-timeout", type=float, default=15.0)
     args = parser.parse_args()
 
-    def sigterm_handler(signum, frame):
-        raise SystemExit(0)
-    signal.signal(signal.SIGTERM, sigterm_handler)
-
     try:
         asyncio.run(run(args))
-    except (KeyboardInterrupt, SystemExit):
+    except KeyboardInterrupt:
         pass
 
 

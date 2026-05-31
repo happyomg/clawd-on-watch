@@ -1,8 +1,3 @@
-# OkHttp
--dontwarn okhttp3.**
--dontwarn okio.**
--keep class okhttp3.** { *; }
-
-# Keep E2E crypto classes
--keep class com.clawd.watch.crypto.** { *; }
--keep class com.clawd.watch.data.** { *; }
+# Keep BLE service and data classes used via reflection/serialization
+-keep class com.clawd.watch.service.BleService { *; }
+-keep class com.clawd.watch.data.WatchMessage$* { *; }

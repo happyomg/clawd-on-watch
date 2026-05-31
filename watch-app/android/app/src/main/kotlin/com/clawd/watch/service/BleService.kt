@@ -367,6 +367,7 @@ class BleService : Service() {
     // ── Advertising ──
 
     @SuppressLint("MissingPermission")
+    @Synchronized
     private fun startAdvertising() {
         if (isAdvertising) return
         if (!hasBlePermission()) {
@@ -395,6 +396,7 @@ class BleService : Service() {
     }
 
     @SuppressLint("MissingPermission")
+    @Synchronized
     private fun stopAdvertising() {
         if (!isAdvertising) return
         advertiser?.stopAdvertising(advertiseCallback)

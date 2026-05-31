@@ -54,7 +54,7 @@ class SvgPetView @JvmOverloads constructor(
                     useWideViewPort = true
                     loadWithOverviewMode = true
                     setSupportZoom(false)
-                    allowFileAccess = true
+                    allowFileAccess = false
                     cacheMode = WebSettings.LOAD_NO_CACHE
                 }
                 setLayerType(LAYER_TYPE_HARDWARE, null)
@@ -89,6 +89,7 @@ class SvgPetView @JvmOverloads constructor(
 
     private fun escapeJs(s: String): String =
         s.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "\\r")
+            .replace(" ", "\\u2028").replace(" ", "\\u2029")
 
     private fun updateSvg() {
         if (!loaded) return
@@ -129,6 +130,7 @@ class SvgPetView @JvmOverloads constructor(
 
     override fun onDetachedFromWindow() {
         webView?.destroy()
+        webView = null
         super.onDetachedFromWindow()
     }
 }

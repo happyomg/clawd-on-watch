@@ -70,8 +70,14 @@ function createWatchAdapter(options = {}) {
       if (truthy(env.CLAWD_WATCH_ENABLED)) config.enabled = true;
     }
     if (truthy(env.CLAWD_WATCH_DISABLED)) config.enabled = false;
-    if (env.CLAWD_WATCH_ADDRESS) config.address = String(env.CLAWD_WATCH_ADDRESS).trim();
-    if (env.CLAWD_WATCH_NAME_PREFIX) config.namePrefix = String(env.CLAWD_WATCH_NAME_PREFIX).trim();
+    if (env.CLAWD_WATCH_ADDRESS) {
+      const addr = String(env.CLAWD_WATCH_ADDRESS).trim().slice(0, 120);
+      if (addr && !/[\x00-\x1f\x7f]/.test(addr)) config.address = addr;
+    }
+    if (env.CLAWD_WATCH_NAME_PREFIX) {
+      const prefix = String(env.CLAWD_WATCH_NAME_PREFIX).trim().slice(0, 40);
+      if (prefix && !/[\x00-\x1f\x7f]/.test(prefix)) config.namePrefix = prefix;
+    }
     return config;
   }
 

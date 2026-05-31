@@ -27,11 +27,16 @@ class ApprovalActivity : AppCompatActivity() {
     private var responded = false
     private var flickDetector: FlickDetector? = null
     private var requestId: String? = null
+    private var pendingDecision: Pair<String, String>? = null
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             bleService = (binder as BleService.LocalBinder).getService()
             bound = true
+            pendingDecision?.let { (decision, source) ->
+                pendingDecision = null
+                respond(decision, source)
+            }
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -131,6 +136,10 @@ class ApprovalActivity : AppCompatActivity() {
     private fun respond(decision: String, source: String) {
         val id = requestId ?: return
         if (responded) return
+        if (bleService == null) {
+            pendingDecision = Pair(decision, source)
+            return
+        }
         responded = true
         handler.removeCallbacksAndMessages(null)
         bleService?.sendApprovalResponse(ApprovalResponse(id, decision, source))

@@ -2,6 +2,7 @@
 # Sync SVG assets from desktop (assets/svg/) to watch app.
 # Only copies SVGs that the watch ThemeConfig actually references.
 # Run from repo root: ./scripts/sync-watch-svgs.sh
+shopt -s nullglob
 
 set -euo pipefail
 
