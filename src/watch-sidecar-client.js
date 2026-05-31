@@ -72,7 +72,7 @@ class WatchSidecarClient {
     });
 
     this.proc.on("exit", (code, signal) => {
-      if (this._stopping) { this._stopping = false; return; }
+      if (this._stopping) { this._stopping = false; this.proc = null; return; }
       this.started = false;
       const wasConnected = this.transport.connected;
       this.transport.connected = false;
@@ -92,11 +92,19 @@ class WatchSidecarClient {
     if (!this.proc) return;
     this._stopping = true;
     this._writeStdin({ type: "stop" });
-    try { this.proc.kill("SIGTERM"); } catch (_) {}
-    this.proc = null;
+    const proc = this.proc;
+    try { proc.kill("SIGTERM"); } catch (_) {}
     this.started = false;
     this.transport.connected = false;
     this.transport.secure = false;
+    const graceTimer = setTimeout(() => {
+      if (this.proc === proc) {
+        try { proc.kill("SIGKILL"); } catch (_) {}
+        this.proc = null;
+      }
+      this._stopping = false;
+    }, 3000);
+    if (graceTimer && typeof graceTimer.unref === "function") graceTimer.unref();
   }
 
   connect(target) {

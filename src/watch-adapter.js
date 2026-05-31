@@ -60,6 +60,7 @@ function createWatchAdapter(options = {}) {
   let controller = null;
   let started = false;
   let lastError = null;
+  let lastDevices = [];
   let retryAttempt = 0;
   let restartTimer = null;
   let activeConfig = readConfig();
@@ -100,6 +101,7 @@ function createWatchAdapter(options = {}) {
       permissionsEnabled: activeConfig.permissionsEnabled,
       lastError,
       retryAttempt,
+      devices: lastDevices,
       ...extra,
     };
     onStatusChanged(snapshot);
@@ -203,7 +205,10 @@ function createWatchAdapter(options = {}) {
         publishStatus();
         maybeSyncTheme();
       },
-      onDevices: () => publishStatus(),
+      onDevices: (items) => {
+        lastDevices = Array.isArray(items) ? items : [];
+        publishStatus();
+      },
       onError: (err) => handleIssue(err),
       onTransportStateChanged: (state) => {
         if (state && state.connected === true) {
@@ -211,9 +216,8 @@ function createWatchAdapter(options = {}) {
           lastError = null;
           if (controller && typeof controller.resetDedup === "function") controller.resetDedup();
         } else if (state && state.previous && state.previous.connected === true) {
-          handleIssue({ code: "DISCONNECTED", message: "transport disconnected" });
-          // A disconnect may have interrupted a transfer — allow a fresh push
-          // (and re-comparison via CWD4) on the next connection.
+          // Don't call handleIssue here — bridge handles BLE reconnect internally.
+          // Adapter only restarts on SIDECAR_EXIT (process death) via log callback.
           themeSyncing = false;
           lastSyncedHash = null;
           watchThemeHash = null;
@@ -295,9 +299,21 @@ function createWatchAdapter(options = {}) {
     return controller.notifyPermissionsChanged();
   }
 
+  function scan() {
+    if (!started || !sidecar || typeof sidecar.scan !== "function") return;
+    sidecar.scan();
+  }
+
+  function connectDevice(address) {
+    if (!started || !sidecar || typeof sidecar.connect !== "function") return;
+    sidecar.connect(address);
+  }
+
   return {
     start,
     stop,
+    scan,
+    connectDevice,
     applySettingsChange,
     notifyStateChanged,
     notifyPermissionsChanged,

@@ -266,6 +266,7 @@ class BleService : Service() {
                     }
                     Log.i(TAG, "Central connected: ${device.address}")
                     connectedDevice = device
+                    stopAdvertising()
                     handler.post {
                         onConnectionStateChanged?.invoke(true)
                         updateNotification("Connected to ${device.name ?: device.address}")
@@ -478,7 +479,6 @@ class BleService : Service() {
     // ── Incoming data handlers ──
 
     private fun handleStateWrite(data: ByteArray) {
-        stopAdvertising()
         val text = data.toString(Charsets.UTF_8)
         Log.i(TAG, "handleStateWrite: ${data.size} bytes")
         try {

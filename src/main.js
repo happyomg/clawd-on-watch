@@ -272,6 +272,12 @@ const _settingsController = createSettingsController({
       }
       return { status: "ok" };
     },
+    scanWatch: () => {
+      if (typeof watchAdapter !== "undefined" && watchAdapter) watchAdapter.scan();
+    },
+    connectWatch: (address) => {
+      if (typeof watchAdapter !== "undefined" && watchAdapter) watchAdapter.connectDevice(address);
+    },
     clearSessionsByAgent: (id) => agentRuntime ? agentRuntime.clearSessionsByAgent(id) : 0,
     dismissPermissionsByAgent: (id) => agentRuntime ? agentRuntime.dismissPermissionsByAgent(id) : 0,
     resizePet: _deferredResizePet,

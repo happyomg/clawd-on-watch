@@ -14,8 +14,7 @@
       children: [buildOptionList([
         buildStatusRow(core),
         buildSwitchRow(core, "enabled", "Enable", "Connect to a Wear OS watch via BLE"),
-        buildTextRow(core, "address", "BLE Address", "Leave empty to auto-scan", { placeholder: "DE:9C:4D:1B:D2:BE", maxLength: 120 }),
-        buildTextRow(core, "namePrefix", "Name Prefix", "Filter devices by name prefix", { placeholder: "Clawd", maxLength: 40 }),
+        buildDeviceListRow(core),
         buildSwitchRow(core, "permissionsEnabled", "Approval on Watch", "Allow approving tool requests from the watch",
           { disabled: !getConfig(core.state).enabled }),
       ])],
@@ -149,6 +148,67 @@
       });
       row.querySelector(".row-text").appendChild(btn);
     }
+    return row;
+  }
+
+  function buildDeviceListRow(core) {
+    const status = core.runtime && core.runtime.watchStatus;
+    const config = getConfig(core.state);
+    const row = document.createElement("div");
+    row.className = "row";
+    if (!config.enabled) return row;
+
+    const devices = (status && Array.isArray(status.devices)) ? status.devices : [];
+    const connected = status && status.connected;
+    const currentAddr = config.address;
+
+    row.innerHTML = '<div class="row-text"><span class="row-label">Device</span><span class="row-desc"></span></div>' +
+      '<div class="row-control"><button type="button" class="watch-scan-btn"></button></div>';
+
+    if (connected && currentAddr) {
+      row.querySelector(".row-desc").textContent = "Connected: " + currentAddr.slice(0, 12) + "...";
+    } else if (devices.length > 0) {
+      row.querySelector(".row-desc").textContent = devices.length + " device(s) found";
+    } else {
+      row.querySelector(".row-desc").textContent = "No devices found — tap Scan";
+    }
+
+    var scanBtn = row.querySelector(".watch-scan-btn");
+    scanBtn.textContent = "Scan";
+    scanBtn.style.cssText = "padding:4px 12px;font-size:12px;border-radius:6px;border:1px solid #555;background:#333;color:#eee;cursor:pointer;min-height:auto;width:auto;";
+    scanBtn.addEventListener("click", function() {
+      scanBtn.textContent = "Scanning...";
+      scanBtn.disabled = true;
+      window.settingsAPI.command("watch.scan");
+      setTimeout(function() {
+        scanBtn.textContent = "Scan";
+        scanBtn.disabled = false;
+        core.ops.requestRender({ content: true });
+      }, 12000);
+    });
+
+    if (devices.length > 0 && !connected) {
+      var list = document.createElement("div");
+      list.style.cssText = "margin-top:8px;";
+      for (var i = 0; i < devices.length; i++) {
+        (function(dev) {
+          var item = document.createElement("button");
+          item.type = "button";
+          item.textContent = (dev.name || dev.address) + " (RSSI: " + (dev.rssi || "?") + ")";
+          item.style.cssText = "display:block;width:100%;margin-bottom:4px;padding:6px 10px;font-size:11px;border-radius:6px;border:1px solid #444;background:#222;color:#ddd;cursor:pointer;text-align:left;min-height:auto;";
+          item.addEventListener("click", function() {
+            item.textContent = "Connecting...";
+            item.disabled = true;
+            updateConfig(core, { address: dev.address }).then(function() {
+              window.settingsAPI.command("watch.connect", { address: dev.address });
+            });
+          });
+          list.appendChild(item);
+        })(devices[i]);
+      }
+      row.querySelector(".row-text").appendChild(list);
+    }
+
     return row;
   }
 

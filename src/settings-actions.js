@@ -1138,6 +1138,18 @@ function watchRestart(_payload, deps) {
   return { status: "ok" };
 }
 
+function watchScan(_payload, deps) {
+  if (deps && typeof deps.scanWatch === "function") deps.scanWatch();
+  return { status: "ok" };
+}
+
+function watchConnect(payload, deps) {
+  const address = payload && typeof payload.address === "string" ? payload.address : "";
+  if (!address) return { status: "error", message: "address required" };
+  if (deps && typeof deps.connectWatch === "function") deps.connectWatch(address);
+  return { status: "ok" };
+}
+
 async function watchInstallBleak(_payload, _deps) {
   const { execFile } = require("child_process");
   const python = process.env.CLAWD_WATCH_PYTHON || process.env.CLAWD_HARDWARE_BUDDY_PYTHON || "python";
@@ -1191,6 +1203,8 @@ const commandRegistry = {
   "telegramMigration.dispatch": telegramMigrationDispatch,
   "watch.installBleak": watchInstallBleak,
   "watch.restart": watchRestart,
+  "watch.scan": watchScan,
+  "watch.connect": watchConnect,
 };
 
 module.exports = {
