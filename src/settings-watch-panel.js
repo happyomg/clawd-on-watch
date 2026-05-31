@@ -287,19 +287,10 @@
             item.textContent = (dev.name || "Unknown") + "  RSSI " + (dev.rssi || "?");
             item.style.cssText = "display:block;width:100%;margin-bottom:4px;padding:6px 10px;font-size:11px;border-radius:6px;border:1px solid #444;background:#222;color:#ddd;cursor:pointer;text-align:left;min-height:auto;";
             item.addEventListener("click", function() {
-              // Local connecting intent: keeps the UI in the "connecting"
-              // branch even if Python's connected status arrives in the same
-              // render frame as the initial publishStatus(connecting=true).
               if (core.runtime) core.runtime.watchPendingConnect = { address: dev.address, name: dev.name || "", startedAt: Date.now() };
-              // Persist the address (so it survives restarts) and tell the
-              // running sidecar to connect. The adapter's applySettingsChange
-              // forwards address-only updates as a connect command instead of
-              // bouncing the sidecar, so this row stays rendered while the
-              // "connecting" status from the bridge updates the badge.
+              // Persist the address — applySettingsChange detects the address
+              // change and forwards a single connect command to the sidecar.
               updateConfig(core, { address: dev.address });
-              if (window.settingsAPI && typeof window.settingsAPI.command === "function") {
-                window.settingsAPI.command("watch.connect", { address: dev.address });
-              }
               core.ops.requestRender({ content: true });
             });
             list.appendChild(item);
