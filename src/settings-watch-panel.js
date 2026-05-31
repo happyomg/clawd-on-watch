@@ -161,52 +161,74 @@
     const devices = (status && Array.isArray(status.devices)) ? status.devices : [];
     const connected = status && status.connected;
     const currentAddr = config.address;
+    var btnStyle = "padding:4px 12px;font-size:12px;border-radius:6px;border:1px solid #555;background:#333;color:#eee;cursor:pointer;min-height:auto;width:auto;";
 
     row.innerHTML = '<div class="row-text"><span class="row-label">Device</span><span class="row-desc"></span></div>' +
-      '<div class="row-control"><button type="button" class="watch-scan-btn"></button></div>';
+      '<div class="row-control"></div>';
+
+    var controlDiv = row.querySelector(".row-control");
 
     if (connected && currentAddr) {
-      row.querySelector(".row-desc").textContent = "Connected: " + currentAddr.slice(0, 12) + "...";
-    } else if (devices.length > 0) {
-      row.querySelector(".row-desc").textContent = devices.length + " device(s) found";
+      var connName = devices.find(function(d) { return d.address === currentAddr; });
+      row.querySelector(".row-desc").textContent = "Connected: " + (connName ? connName.name : currentAddr.slice(0, 16));
+
+      var disconnectBtn = document.createElement("button");
+      disconnectBtn.type = "button";
+      disconnectBtn.textContent = "Disconnect";
+      disconnectBtn.style.cssText = btnStyle + "border-color:#F87171;";
+      disconnectBtn.addEventListener("click", function() {
+        disconnectBtn.textContent = "Disconnecting...";
+        disconnectBtn.disabled = true;
+        updateConfig(core, { address: "", enabled: false }).then(function() {
+          setTimeout(function() {
+            updateConfig(core, { enabled: true });
+          }, 500);
+        });
+      });
+      controlDiv.appendChild(disconnectBtn);
     } else {
-      row.querySelector(".row-desc").textContent = "No devices found — tap Scan";
-    }
-
-    var scanBtn = row.querySelector(".watch-scan-btn");
-    scanBtn.textContent = "Scan";
-    scanBtn.style.cssText = "padding:4px 12px;font-size:12px;border-radius:6px;border:1px solid #555;background:#333;color:#eee;cursor:pointer;min-height:auto;width:auto;";
-    scanBtn.addEventListener("click", function() {
-      scanBtn.textContent = "Scanning...";
-      scanBtn.disabled = true;
-      window.settingsAPI.command("watch.scan");
-      setTimeout(function() {
-        scanBtn.textContent = "Scan";
-        scanBtn.disabled = false;
-        core.ops.requestRender({ content: true });
-      }, 12000);
-    });
-
-    if (devices.length > 0 && !connected) {
-      var list = document.createElement("div");
-      list.style.cssText = "margin-top:8px;";
-      for (var i = 0; i < devices.length; i++) {
-        (function(dev) {
-          var item = document.createElement("button");
-          item.type = "button";
-          item.textContent = (dev.name || dev.address) + " (RSSI: " + (dev.rssi || "?") + ")";
-          item.style.cssText = "display:block;width:100%;margin-bottom:4px;padding:6px 10px;font-size:11px;border-radius:6px;border:1px solid #444;background:#222;color:#ddd;cursor:pointer;text-align:left;min-height:auto;";
-          item.addEventListener("click", function() {
-            item.textContent = "Connecting...";
-            item.disabled = true;
-            updateConfig(core, { address: dev.address }).then(function() {
-              window.settingsAPI.command("watch.connect", { address: dev.address });
-            });
-          });
-          list.appendChild(item);
-        })(devices[i]);
+      if (devices.length > 0) {
+        row.querySelector(".row-desc").textContent = devices.length + " device(s) found — select one:";
+      } else {
+        row.querySelector(".row-desc").textContent = "No devices found";
       }
-      row.querySelector(".row-text").appendChild(list);
+
+      var scanBtn = document.createElement("button");
+      scanBtn.type = "button";
+      scanBtn.textContent = "Scan";
+      scanBtn.style.cssText = btnStyle;
+      scanBtn.addEventListener("click", function() {
+        scanBtn.textContent = "Scanning...";
+        scanBtn.disabled = true;
+        window.settingsAPI.command("watch.scan");
+      });
+      controlDiv.appendChild(scanBtn);
+
+      if (devices.length > 0) {
+        var list = document.createElement("div");
+        list.style.cssText = "margin-top:8px;";
+        for (var i = 0; i < devices.length; i++) {
+          (function(dev) {
+            var item = document.createElement("button");
+            item.type = "button";
+            item.textContent = (dev.name || "Unknown") + "  RSSI " + (dev.rssi || "?");
+            item.style.cssText = "display:block;width:100%;margin-bottom:4px;padding:6px 10px;font-size:11px;border-radius:6px;border:1px solid #444;background:#222;color:#ddd;cursor:pointer;text-align:left;min-height:auto;";
+            item.addEventListener("click", function() {
+              item.textContent = "Connecting to " + (dev.name || "device") + "...";
+              item.style.borderColor = "#4ADE80";
+              item.disabled = true;
+              for (var btn = list.firstChild; btn; btn = btn.nextSibling) {
+                if (btn !== item) btn.style.display = "none";
+              }
+              updateConfig(core, { address: dev.address }).then(function() {
+                window.settingsAPI.command("watch.connect", { address: dev.address });
+              });
+            });
+            list.appendChild(item);
+          })(devices[i]);
+        }
+        row.querySelector(".row-text").appendChild(list);
+      }
     }
 
     return row;
