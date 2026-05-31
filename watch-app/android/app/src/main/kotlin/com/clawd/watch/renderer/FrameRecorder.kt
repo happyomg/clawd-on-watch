@@ -185,11 +185,12 @@ class FrameRecorder(
     private fun buildHarness(svgText: String): String {
         return """
 <!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;background:transparent;overflow:hidden}
-#c{width:100%;height:100%;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
-#c svg{width:160%;height:160%;position:absolute;left:-30%;top:-65%}
+#c{width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden}
+#c svg{display:block;width:90%;height:90%;object-fit:contain}
 </style></head>
 <body><div id="c">$svgText</div>
 <script>
