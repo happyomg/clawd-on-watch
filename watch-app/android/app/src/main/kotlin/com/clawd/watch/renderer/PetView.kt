@@ -143,7 +143,8 @@ class PetView @JvmOverloads constructor(
         player.stop()
         imageView.visibility = GONE
         fallbackLabel.visibility = GONE
-onRecordingChanged?.invoke(true)
+        recorder?.cancel()
+        onRecordingChanged?.invoke(true)
 
         val size = if (width > 0) width else FALLBACK_SIZE_PX
         val rec = FrameRecorder(context, this, size, FPS)

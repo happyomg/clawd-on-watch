@@ -55,7 +55,7 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread {
                     themeSyncNeeded = false
                     petView.reloadForThemeChange()
-                    updateConnectionState(bleConnected) // clear the sync label
+                    showSyncComplete()
                 }
             }
             service.onThemeProgress = { p ->
@@ -158,23 +158,50 @@ class MainActivity : AppCompatActivity() {
         petView.alpha = if (connected) 1.0f else 0.5f
     }
 
-    /** Show theme-transfer progress in the connection indicator. */
+    // ── Sync UX — clear feedback at every stage ──
+
+    private val syncHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var syncCompleteRunnable: Runnable? = null
+
+    /**
+     * Stage 1: Desktop is pushing SVG files over BLE (CWD5 chunks).
+     * Progress 0→1 reported by ThemeReceiver.
+     */
     private fun showSyncProgress(fraction: Float) {
+        cancelSyncCompleteTimer()
         if (fraction >= 1f) {
-            updateConnectionState(bleConnected)
+            showSyncComplete()
             return
         }
-        connectionIndicator.text = "🔄 Syncing ${(fraction * 100).toInt()}%"
+        connectionIndicator.visibility = android.view.View.VISIBLE
+        connectionIndicator.text = "📥 Receiving theme ${(fraction * 100).toInt()}%"
         connectionIndicator.setTextColor(0xFFFF9800.toInt())
     }
 
     /**
-     * Recording lifecycle:
-     * 1. showRecording(true) → show overlay + hide UI chrome
-     * 2. onCaptureStarted() → WebView ready, hide overlay so PixelCopy gets clean frames
-     * 3. showRecording(false) → recording done, restore UI
+     * Stage 2: SVG transfer complete, theme activated.
+     * Brief confirmation before returning to normal state.
+     */
+    private fun showSyncComplete() {
+        connectionIndicator.visibility = android.view.View.VISIBLE
+        val name = ThemeConfig.active.name.replaceFirstChar { it.uppercase() }
+        connectionIndicator.text = "✅ Theme: $name"
+        connectionIndicator.setTextColor(0xFF4CAF50.toInt())
+        cancelSyncCompleteTimer()
+        syncCompleteRunnable = Runnable { updateConnectionState(bleConnected) }
+        syncHandler.postDelayed(syncCompleteRunnable!!, 3000)
+    }
+
+    /**
+     * Stage 3: On-device frame recording (foreground sync mode).
+     * The WebView renders the real animation visibly while PixelCopy captures
+     * frames. UI chrome is hidden so it doesn't get captured into frames.
+     *
+     * Lifecycle: showRecording(true) → overlay visible → onCaptureStarted →
+     * overlay hidden (user sees live animation) → showRecording(false) → restore UI.
      */
     private fun showRecording(recording: Boolean) {
+        cancelSyncCompleteTimer()
         if (recording) {
             connectionIndicator.visibility = android.view.View.GONE
             stateChip.visibility = android.view.View.GONE
@@ -188,6 +215,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun onCaptureStarted() {
         syncOverlay.visibility = android.view.View.GONE
+    }
+
+    private fun cancelSyncCompleteTimer() {
+        syncCompleteRunnable?.let { syncHandler.removeCallbacks(it) }
+        syncCompleteRunnable = null
     }
 
     private fun updateStateChip(state: ClawdState) {

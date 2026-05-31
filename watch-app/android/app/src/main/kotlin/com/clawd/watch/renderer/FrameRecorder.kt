@@ -49,9 +49,23 @@ class FrameRecorder(
     private val io = Executors.newSingleThreadExecutor()
 
     @Volatile private var finished = false
+    @Volatile private var readyFired = false
+    private var activeWebView: WebView? = null
+
+    fun cancel() {
+        if (finished) return
+        finished = true
+        main.post {
+            try {
+                activeWebView?.let { wv -> parent.removeView(wv); wv.destroy() }
+            } catch (_: Exception) {}
+            activeWebView = null
+        }
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     fun record(svgText: String, outputDir: File, onCaptureStarted: (() -> Unit)? = null, onComplete: (List<File>) -> Unit) {
+        readyFired = false
         val frameIntervalMs = (1000L / fps).coerceAtLeast(1L)
         val webView: WebView
         try {
@@ -62,6 +76,8 @@ class FrameRecorder(
             return
         }
 
+        activeWebView = webView
+
         fun finish(frames: List<File>) {
             if (finished) return
             finished = true
@@ -70,6 +86,7 @@ class FrameRecorder(
                     parent.removeView(webView)
                     webView.destroy()
                 } catch (_: Exception) {}
+                activeWebView = null
             }
             onComplete(frames)
         }
@@ -87,11 +104,27 @@ class FrameRecorder(
             isHorizontalScrollBarEnabled = false
             addJavascriptInterface(
                 Bridge { loopMs ->
+                    if (readyFired) return@Bridge
+                    readyFired = true
                     main.post { onCaptureStarted?.invoke() }
                     onReady(this, loopMs, frameIntervalMs, outputDir, ::finish)
                 },
                 "AndroidRec"
             )
+            webViewClient = object : android.webkit.WebViewClient() {
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    // Belt-and-suspenders: the harness <script> calls ready()
+                    // on its own, but if that fails we retry from Kotlin.
+                    main.postDelayed({
+                        if (!readyFired && !finished) {
+                            Log.i(TAG, "onPageFinished retry: invoking ready via evaluateJavascript")
+                            view?.evaluateJavascript(
+                                "try{AndroidRec.ready(loopMs())}catch(e){AndroidRec.ready(0)}", null
+                            )
+                        }
+                    }, 500)
+                }
+            }
         }
 
         try {
@@ -106,7 +139,7 @@ class FrameRecorder(
             "file:///android_asset/", buildHarness(svgText), "text/html", "utf-8", null
         )
         main.postDelayed({
-            if (!finished) { Log.w(TAG, "ready timeout"); finish(emptyList()) }
+            if (!finished && !readyFired) { Log.w(TAG, "ready timeout"); finish(emptyList()) }
         }, READY_TIMEOUT_MS)
     }
 
@@ -125,12 +158,13 @@ class FrameRecorder(
         val written = arrayOfNulls<File>(frameCount)
         var index = 0
         val pendingWrites = java.util.concurrent.atomic.AtomicInteger(0)
+        val allDispatched = java.util.concurrent.atomic.AtomicBoolean(false)
 
         val pixelCopyThread = HandlerThread("FrameRecCapture").apply { start() }
         val pixelCopyHandler = Handler(pixelCopyThread.looper)
 
         fun tryFinalize() {
-            if (pendingWrites.get() > 0) return
+            if (!allDispatched.get() || pendingWrites.get() > 0) return
             writeMeta(outputDir, coveredLoopMs, frameCount)
             pixelCopyThread.quitSafely()
             finish(written.filterNotNull())
@@ -140,6 +174,7 @@ class FrameRecorder(
             override fun run() {
                 if (finished) return
                 if (index >= frameCount) {
+                    allDispatched.set(true)
                     io.execute { tryFinalize() }
                     return
                 }
@@ -179,12 +214,14 @@ class FrameRecorder(
                                     } finally {
                                         bmp.recycle()
                                         pendingWrites.decrementAndGet()
+                                        tryFinalize()
                                     }
                                 }
                             } else {
                                 Log.w(TAG, "PixelCopy failed @$i result=$result")
                                 bmp.recycle()
                                 pendingWrites.decrementAndGet()
+                                tryFinalize()
                             }
                         },
                         pixelCopyHandler
@@ -232,8 +269,8 @@ class FrameRecorder(
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;background:transparent;overflow:hidden}
-#c{width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden}
-#c svg{display:block;max-width:80%;max-height:80%}
+#c{width:100%;height:100%;position:relative;overflow:hidden}
+#c svg{width:160%;height:160%;position:absolute;left:-30%;top:-65%}
 </style></head>
 <body><div id="c">$svgText</div>
 <script>
