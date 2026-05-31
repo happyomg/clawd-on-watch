@@ -40,6 +40,9 @@ class MainActivity : AppCompatActivity() {
     private val syncHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var syncCompleteRunnable: Runnable? = null
 
+    /** True while syncing (SVG transfer + frame recording). Suppresses all Desktop state UI. */
+    private var isSyncing = false
+
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             val service = (binder as BleService.LocalBinder).getService()
@@ -47,150 +50,139 @@ class MainActivity : AppCompatActivity() {
             bound = true
 
             service.onWatchMessage = { msg -> runOnUiThread { handleMessage(msg) } }
-            service.onConnectionStateChanged = { connected ->
-                runOnUiThread { updateConnectionState(connected) }
-            }
-            service.onPowerModeChanged = { mode ->
-                runOnUiThread { handlePowerModeChange(mode) }
-            }
-            service.onThemeChanged = {
-                runOnUiThread {
-                    petView.reloadForThemeChange()
-                    showSyncComplete()
-                }
-            }
-            service.onThemeProgress = { p ->
-                runOnUiThread { showSyncProgress(p) }
-            }
+            service.onConnectionStateChanged = { connected -> runOnUiThread { updateConnectionState(connected) } }
+            service.onPowerModeChanged = { mode -> runOnUiThread { handlePowerModeChange(mode) } }
+            service.onThemeChanged = { runOnUiThread { onThemeSynced() } }
+            service.onThemeProgress = { p -> runOnUiThread { showTransferProgress(p) } }
+            petView.onRecordingChanged = { r -> runOnUiThread { onRecordingChanged(r) } }
+            petView.onRecordProgress = { n, c, t -> runOnUiThread { showRecordProgress(n, c, t) } }
+
             val cached = service.getLastState()
-            if (cached != null) {
-                runOnUiThread { handleCompactState(cached) }
-            }
+            if (cached != null) runOnUiThread { handleCompactState(cached) }
             runOnUiThread { updateConnectionState(service.isConnected()) }
         }
 
-        override fun onServiceDisconnected(name: ComponentName?) {
-            bleService = null
-            bound = false
-        }
+        override fun onServiceDisconnected(name: ComponentName?) { bleService = null; bound = false }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         if (!PairingStore.isPaired(this)) {
-            startActivity(Intent(this, PairingActivity::class.java))
-            finish()
-            return
+            startActivity(Intent(this, PairingActivity::class.java)); finish(); return
         }
-
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(R.layout.activity_main)
-
         petView = findViewById(R.id.pet_view)
         connectionIndicator = findViewById(R.id.connection_indicator)
         stateChip = findViewById(R.id.state_chip)
 
         if (PairingStore.isPaired(this)) {
-            demoMode = false
-            updateConnectionState(false)
-            updateStateChip(ClawdState.IDLE)
+            demoMode = false; updateConnectionState(false); updateStateChip(ClawdState.IDLE)
             BleService.start(this)
         } else {
-            demoMode = true
-            connectionIndicator.text = "Demo Mode"
-            connectionIndicator.setTextColor(0xFFFF9800.toInt())
-            setupDemoTapCycle()
+            demoMode = true; connectionIndicator.text = "Demo Mode"
+            connectionIndicator.setTextColor(0xFFFF9800.toInt()); setupDemoTapCycle()
         }
-
-        flickDetector = FlickDetector(this) { gestureType ->
-            runOnUiThread { handleGesture(gestureType) }
-        }
-
-        petView.setOnLongClickListener {
-            if (!demoMode) showContextMenu()
-            true
-        }
+        flickDetector = FlickDetector(this) { g -> runOnUiThread { handleGesture(g) } }
+        petView.setOnLongClickListener { if (!demoMode) showContextMenu(); true }
     }
 
     override fun onStart() {
         super.onStart()
-        if (PairingStore.isPaired(this)) {
-            bindService(Intent(this, BleService::class.java), connection, Context.BIND_AUTO_CREATE)
-        }
-        flickDetector?.start()
-        petView.resume()
+        if (PairingStore.isPaired(this)) bindService(Intent(this, BleService::class.java), connection, Context.BIND_AUTO_CREATE)
+        flickDetector?.start(); petView.resume()
     }
 
     override fun onStop() {
-        flickDetector?.stop()
-        petView.pause()
+        flickDetector?.stop(); petView.pause()
         if (bound) {
-            bleService?.onWatchMessage = null
-            bleService?.onConnectionStateChanged = null
-            bleService?.onPowerModeChanged = null
-            bleService?.onThemeChanged = null
-            bleService?.onThemeProgress = null
-            unbindService(connection)
-            bound = false
+            bleService?.onWatchMessage = null; bleService?.onConnectionStateChanged = null
+            bleService?.onPowerModeChanged = null; bleService?.onThemeChanged = null
+            bleService?.onThemeProgress = null; petView.onRecordingChanged = null
+            petView.onRecordProgress = null; unbindService(connection); bound = false
         }
         super.onStop()
     }
 
+    // ── Normal state UI ──
+
     private fun updateConnectionState(connected: Boolean) {
         bleConnected = connected
+        if (isSyncing) return // don't touch indicator during sync
         connectionIndicator.text = if (connected) "Connected" else "Disconnected"
-        connectionIndicator.setTextColor(
-            if (connected) StateChipConfig.COLOR_INDICATOR_TEXT else StateChipConfig.COLOR_DISCONNECTED
-        )
+        connectionIndicator.setTextColor(if (connected) StateChipConfig.COLOR_INDICATOR_TEXT else StateChipConfig.COLOR_DISCONNECTED)
         petView.alpha = if (connected) 1.0f else 0.5f
     }
 
-    // ── Theme Sync UX ──
-
-    private fun showSyncProgress(fraction: Float) {
-        cancelSyncCompleteTimer()
-        if (fraction >= 1f) return
-        connectionIndicator.visibility = android.view.View.VISIBLE
-        connectionIndicator.text = "📥 Syncing theme ${(fraction * 100).toInt()}%"
-        connectionIndicator.setTextColor(0xFFFF9800.toInt())
+    private fun updateStateChip(state: ClawdState) {
+        if (isSyncing) return // suppress during sync
+        if (!StateChipConfig.isChipVisible(state)) { stateChip.visibility = android.view.View.GONE; return }
+        stateChip.visibility = android.view.View.VISIBLE
+        val color = StateChipConfig.chipColor(state)
+        val dot = "● "
+        stateChip.text = android.text.SpannableString("$dot${StateChipConfig.chipLabel(state)}").apply {
+            setSpan(android.text.style.ForegroundColorSpan(color), 0, dot.length, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
     }
 
-    private fun showSyncComplete() {
-        val name = ThemeConfig.active.name.replaceFirstChar { it.uppercase() }
+    // ── Sync UX — SVG transfer + frame recording = one "sync" ──
+
+    /** BLE transfer progress (CWD5 chunks arriving). */
+    private fun showTransferProgress(fraction: Float) {
+        if (fraction >= 1f) return // wait for onThemeSynced
+        enterSyncMode()
+        connectionIndicator.text = "📥 Syncing theme ${(fraction * 100).toInt()}%"
+        stateChip.visibility = android.view.View.GONE
+    }
+
+    /** SVG transfer done → trigger frame recording. */
+    private fun onThemeSynced() {
+        enterSyncMode()
+        connectionIndicator.text = "🔄 Preparing animations…"
+        stateChip.visibility = android.view.View.GONE
+        petView.preRecordAll {
+            runOnUiThread { exitSyncMode() }
+        }
+    }
+
+    /** Frame recording started/stopped. */
+    private fun onRecordingChanged(recording: Boolean) {
+        if (!recording && isSyncing) return // exitSyncMode handles this via preRecordAll completion
+    }
+
+    /** Per-state recording progress. */
+    private fun showRecordProgress(name: String, current: Int, total: Int) {
+        if (!isSyncing) return
+        connectionIndicator.text = "🔄 Syncing theme"
+        stateChip.visibility = android.view.View.VISIBLE
+        stateChip.text = "🎬 $name ($current/$total)"
+        stateChip.setTextColor(0xAAFFFFFF.toInt())
+    }
+
+    private fun enterSyncMode() {
+        isSyncing = true
         connectionIndicator.visibility = android.view.View.VISIBLE
+        connectionIndicator.setTextColor(0xFFFF9800.toInt())
+        stateChip.visibility = android.view.View.GONE
+    }
+
+    private fun exitSyncMode() {
+        isSyncing = false
+        stateChip.visibility = android.view.View.GONE
+        val name = ThemeConfig.active.name.replaceFirstChar { it.uppercase() }
         connectionIndicator.text = "✅ Theme: $name"
         connectionIndicator.setTextColor(0xFF4CAF50.toInt())
+        petView.reloadForThemeChange()
         cancelSyncCompleteTimer()
         syncCompleteRunnable = Runnable { updateConnectionState(bleConnected) }
         syncHandler.postDelayed(syncCompleteRunnable!!, 3000)
     }
 
     private fun cancelSyncCompleteTimer() {
-        syncCompleteRunnable?.let { syncHandler.removeCallbacks(it) }
-        syncCompleteRunnable = null
+        syncCompleteRunnable?.let { syncHandler.removeCallbacks(it) }; syncCompleteRunnable = null
     }
 
-    // ── State chip ──
-
-    private fun updateStateChip(state: ClawdState) {
-        if (!StateChipConfig.isChipVisible(state)) {
-            stateChip.visibility = android.view.View.GONE
-            return
-        }
-        stateChip.visibility = android.view.View.VISIBLE
-        val color = StateChipConfig.chipColor(state)
-        val dot = "● "
-        stateChip.text = android.text.SpannableString("$dot${StateChipConfig.chipLabel(state)}").apply {
-            setSpan(
-                android.text.style.ForegroundColorSpan(color),
-                0, dot.length,
-                android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-            )
-        }
-    }
-
-    // ── Message handling ──
+    // ── Message handling (suppressed during sync) ──
 
     private fun handleMessage(msg: WatchMessage) {
         when (msg) {
@@ -201,15 +193,16 @@ class MainActivity : AppCompatActivity() {
 
     private fun handleCompactState(msg: WatchMessage.CompactState) {
         val state = ClawdState.fromStringOrIdle(msg.state)
-        petView.state = state
-        petView.activeSessionCount = msg.activeCount
-        updateStateChip(state)
+        if (!isSyncing) {
+            petView.state = state
+            petView.activeSessionCount = msg.activeCount
+            updateStateChip(state)
+        }
         updateConnectionState(true)
     }
 
     private fun handleApprovalRequest(msg: WatchMessage.ApprovalRequest) {
-        pendingApprovalRequestId = msg.requestId
-        pendingApprovalRisk = msg.risk
+        pendingApprovalRequestId = msg.requestId; pendingApprovalRisk = msg.risk
         flickDetector?.highRiskLocked = msg.risk == "high"
     }
 
@@ -224,57 +217,36 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun clearPendingApproval() {
-        pendingApprovalRequestId = null
-        pendingApprovalRisk = null
-        flickDetector?.highRiskLocked = false
+        pendingApprovalRequestId = null; pendingApprovalRisk = null; flickDetector?.highRiskLocked = false
     }
 
     private fun showContextMenu() {
-        val items = arrayOf("Re-pair", "About")
-        AlertDialog.Builder(this)
-            .setItems(items) { _, which ->
-                when (which) {
-                    0 -> rePair()
-                    1 -> showAbout()
-                }
-            }
-            .show()
+        AlertDialog.Builder(this).setItems(arrayOf("Re-pair", "About")) { _, w ->
+            when (w) { 0 -> rePair(); 1 -> showAbout() }
+        }.show()
     }
 
     private fun rePair() {
-        PairingStore.clear(this)
-        BleService.stop(this)
-        startActivity(Intent(this, PairingActivity::class.java))
-        finish()
+        PairingStore.clear(this); BleService.stop(this)
+        startActivity(Intent(this, PairingActivity::class.java)); finish()
     }
 
     private fun showAbout() {
-        val version = try {
-            packageManager.getPackageInfo(packageName, 0).versionName
-        } catch (_: Exception) { "unknown" }
-        AlertDialog.Builder(this)
-            .setTitle("Clawd")
-            .setMessage("Version $version")
-            .setPositiveButton("OK", null)
-            .show()
+        val v = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (_: Exception) { "?" }
+        AlertDialog.Builder(this).setTitle("Clawd").setMessage("Version $v").setPositiveButton("OK", null).show()
     }
 
-    // ── Demo mode ──
-
     private val demoStates = listOf(
-        ClawdState.IDLE, ClawdState.THINKING, ClawdState.WORKING,
-        ClawdState.JUGGLING, ClawdState.ATTENTION, ClawdState.SWEEPING,
-        ClawdState.NOTIFICATION, ClawdState.ERROR, ClawdState.CARRYING,
-        ClawdState.SLEEPING, ClawdState.YAWNING, ClawdState.DOZING,
+        ClawdState.IDLE, ClawdState.THINKING, ClawdState.WORKING, ClawdState.JUGGLING,
+        ClawdState.ATTENTION, ClawdState.SWEEPING, ClawdState.NOTIFICATION, ClawdState.ERROR,
+        ClawdState.CARRYING, ClawdState.SLEEPING, ClawdState.YAWNING, ClawdState.DOZING,
         ClawdState.COLLAPSING, ClawdState.WAKING,
     )
 
     private fun setupDemoTapCycle() {
         petView.setOnClickListener {
             demoStateIndex = (demoStateIndex + 1) % demoStates.size
-            val state = demoStates[demoStateIndex]
-            petView.state = state
-            updateStateChip(state)
+            petView.state = demoStates[demoStateIndex]; updateStateChip(demoStates[demoStateIndex])
         }
         updateStateChip(demoStates[0])
     }
@@ -282,8 +254,7 @@ class MainActivity : AppCompatActivity() {
     private fun handlePowerModeChange(mode: PowerManager.PowerMode) {
         when (mode) {
             PowerManager.PowerMode.SCREEN_OFF -> { petView.pause(); flickDetector?.stop() }
-            PowerManager.PowerMode.LOW_BATTERY,
-            PowerManager.PowerMode.NORMAL -> { petView.resume(); flickDetector?.start() }
+            PowerManager.PowerMode.LOW_BATTERY, PowerManager.PowerMode.NORMAL -> { petView.resume(); flickDetector?.start() }
         }
     }
 }

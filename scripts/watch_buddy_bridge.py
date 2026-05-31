@@ -56,7 +56,7 @@ def emit_status(connected, device_name=None, theme_hash=None):
     msg = {"type": "status", "connected": connected}
     if device_name:
         msg["deviceName"] = device_name
-    if theme_hash:
+    if theme_hash is not None:
         msg["themeHash"] = theme_hash
     emit(msg)
 

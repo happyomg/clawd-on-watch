@@ -11,7 +11,7 @@
 //   chunk:    {t:"chunk", f:<file>, i:<index>, c:<count>, d:<base64slice>}
 //   done:     {t:"done", hash}
 
-const DEFAULT_CHUNK_B64 = 480; // base64 chars/chunk — larger for frame data
+const DEFAULT_CHUNK_B64 = 480; // base64 chars/chunk
 
 function base64Of(data) {
   if (Buffer.isBuffer(data)) return data.toString("base64");
