@@ -53,6 +53,13 @@ class WatchSidecarClient {
       env,
       stdio: ["pipe", "pipe", "pipe"],
     });
+    // Swallow async pipe errors (EPIPE etc.) on all three stdio streams so a
+    // dying sidecar can never crash the main process. The synchronous
+    // try/catch in _writeStdin only catches sync throws, not the EPIPE that
+    // surfaces from WriteWrap.onWriteComplete after the pipe is half-closed.
+    if (this.proc.stdin) this.proc.stdin.on("error", () => {});
+    if (this.proc.stdout) this.proc.stdout.on("error", () => {});
+    if (this.proc.stderr) this.proc.stderr.on("error", () => {});
     this.started = true;
     this.proc.stdout.setEncoding("utf-8");
     this.proc.stderr.setEncoding("utf-8");
@@ -91,8 +98,17 @@ class WatchSidecarClient {
   stop() {
     if (!this.proc) return;
     this._stopping = true;
+    if (this._disconnectTimer) { clearTimeout(this._disconnectTimer); this._disconnectTimer = null; }
+    // Best-effort graceful stop: ask Python to break out of its loop, then
+    // half-close stdin so it sees EOF. Both are wrapped because the pipe may
+    // already be torn down.
     this._writeStdin({ type: "stop" });
     const proc = this.proc;
+    try {
+      if (proc.stdin && !proc.stdin.destroyed && !proc.stdin.writableEnded) {
+        proc.stdin.end();
+      }
+    } catch (_) {}
     try { proc.kill("SIGTERM"); } catch (_) {}
     this.started = false;
     this.transport.connected = false;
@@ -113,6 +129,23 @@ class WatchSidecarClient {
   }
 
   /**
+   * Drop the active BLE link without killing the Python sidecar. The bridge
+   * stops auto-reconnect until a new connect command arrives. This keeps the
+   * sidecar process alive across UI disconnect/reconnect cycles, which avoids
+   * the EPIPE / cold-start races of toggling `enabled` to bounce the process.
+   */
+  disconnect() {
+    this._writeStdin({ type: "disconnect" });
+    if (this._disconnectTimer) clearTimeout(this._disconnectTimer);
+    this._disconnectTimer = setTimeout(() => {
+      this._disconnectTimer = null;
+      if (this.transport.connected) {
+        this.onError({ code: "DISCONNECT_STUCK", message: "disconnect timed out" });
+      }
+    }, 1500);
+  }
+
+  /**
    * Stream a theme to the watch via CWD5. `frames` is the ordered list from
    * buildThemeFrames (manifest → chunks → done); the bridge writes each frame
    * to the Theme Data characteristic in order.
@@ -126,10 +159,23 @@ class WatchSidecarClient {
     this._writeStdin({ type: "scan" });
   }
 
+  /**
+   * Direct reconnect to a known address without scanning. Falls back to
+   * last_address (from the most recent successful connection) or the CLI
+   * --address argument inside the bridge.
+   */
+  reconnect(address) {
+    this._writeStdin({ type: "reconnect", address: address || "" });
+  }
+
   _writeStdin(obj) {
-    if (!this.proc || !this.proc.stdin || this.proc.stdin.destroyed) return;
+    if (!this.proc) return;
+    const stdin = this.proc.stdin;
+    if (!stdin || stdin.destroyed || stdin.writableEnded || stdin.writable === false) return;
     try {
-      this.proc.stdin.write(JSON.stringify(obj) + "\n");
+      // Pass an error callback so async EPIPE doesn't go to the stream's
+      // "error" event as an unhandled emit on older Node versions.
+      stdin.write(JSON.stringify(obj) + "\n", () => {});
     } catch (_) {}
   }
 
@@ -141,10 +187,19 @@ class WatchSidecarClient {
     const type = msg.type || "";
 
     if (type === "status") {
+      // Scanning-only status update (no connection state change)
+      if ("scanning" in msg && !("connected" in msg)) {
+        this.onStatus(msg);
+        return;
+      }
+      // Connection status
+      if (!msg.connected && this._disconnectTimer) {
+        clearTimeout(this._disconnectTimer);
+        this._disconnectTimer = null;
+      }
       const wasConnected = this.transport.connected;
       this.transport.connected = !!msg.connected;
       this.transport.secure = !!msg.connected;
-      this.onStatus(msg);
       if (wasConnected !== this.transport.connected) {
         this.onTransportStateChanged({
           connected: this.transport.connected,
@@ -152,6 +207,7 @@ class WatchSidecarClient {
           previous: { connected: wasConnected },
         });
       }
+      this.onStatus(msg);
     } else if (type === "devices") {
       this.onDevices(msg.items || []);
     } else if (type === "approval_response") {

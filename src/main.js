@@ -278,6 +278,16 @@ const _settingsController = createSettingsController({
     connectWatch: (address) => {
       if (typeof watchAdapter !== "undefined" && watchAdapter) watchAdapter.connectDevice(address);
     },
+    disconnectWatch: () => {
+      if (typeof watchAdapter !== "undefined" && watchAdapter && typeof watchAdapter.disconnectDevice === "function") {
+        watchAdapter.disconnectDevice();
+      }
+    },
+    reconnectWatch: (address) => {
+      if (typeof watchAdapter !== "undefined" && watchAdapter && typeof watchAdapter.reconnect === "function") {
+        watchAdapter.reconnect(address);
+      }
+    },
     clearSessionsByAgent: (id) => agentRuntime ? agentRuntime.clearSessionsByAgent(id) : 0,
     dismissPermissionsByAgent: (id) => agentRuntime ? agentRuntime.dismissPermissionsByAgent(id) : 0,
     resizePet: _deferredResizePet,

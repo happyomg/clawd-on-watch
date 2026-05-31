@@ -39,14 +39,31 @@
     if (runtime.watchSettingsListenerInstalled) return;
     runtime.watchSettingsListenerInstalled = true;
     runtime.watchStatus = runtime.watchStatus || null;
+    runtime.watchPendingConnect = runtime.watchPendingConnect || null;
     const rerender = () => {
       if (!activeTabId || core.state.activeTab === activeTabId) core.ops.requestRender({ content: true });
     };
+    const applyStatus = (s) => {
+      runtime.watchStatus = s || null;
+      // Clear the local "connecting intent" once the bridge confirms connect,
+      // surfaces an error, or the address moves away from what we requested.
+      // Without this, the UI may briefly skip the connecting frame entirely
+      // because Python's emit_status(true) lands in the same render frame as
+      // the publishStatus(connecting=true) that fired moments earlier.
+      const pending = runtime.watchPendingConnect;
+      if (pending) {
+        if (s && s.connected && s.address && s.address === pending.address) runtime.watchPendingConnect = null;
+        else if (s && s.lastError && s.lastError.at && s.lastError.at >= pending.startedAt) runtime.watchPendingConnect = null;
+        else if (s && s.address && s.address !== pending.address) runtime.watchPendingConnect = null;
+        else if (Date.now() - pending.startedAt > 30000) runtime.watchPendingConnect = null;
+      }
+      rerender();
+    };
     if (window.settingsAPI && typeof window.settingsAPI.getWatchStatus === "function") {
-      window.settingsAPI.getWatchStatus().then((s) => { runtime.watchStatus = s || null; rerender(); }).catch(() => {});
+      window.settingsAPI.getWatchStatus().then(applyStatus).catch(() => {});
     }
     if (window.settingsAPI && typeof window.settingsAPI.onWatchStatusChanged === "function") {
-      window.settingsAPI.onWatchStatusChanged((s) => { runtime.watchStatus = s || null; rerender(); });
+      window.settingsAPI.onWatchStatusChanged(applyStatus);
     }
   }
 
@@ -66,16 +83,21 @@
 
   function statusKind(core) {
     const status = core.runtime && core.runtime.watchStatus;
+    const pending = core.runtime && core.runtime.watchPendingConnect;
     const config = getConfig(core.state);
     if (!config.enabled) return "off";
     if (status && status.lastError) return "error";
     if (status && status.connected) return "connected";
-    if (status && status.started) return "searching";
+    if ((status && status.connecting) || pending) return "connecting";
+    if (status && status.scanning) return "scanning";
+    // The sidecar is alive but not actively connecting/scanning — it's just
+    // waiting for the user to pick a device. "Searching..." implies an
+    // automatic scan in progress, which is misleading; treat it as idle.
     return "idle";
   }
 
   function statusText(kind) {
-    return { off: "Off", error: "Error", connected: "Connected", searching: "Searching...", idle: "Idle" }[kind] || kind;
+    return { off: "Off", error: "Error", connected: "Connected", connecting: "Connecting...", scanning: "Scanning...", idle: "Ready" }[kind] || kind;
   }
 
   function buildHeader(core) {
@@ -87,7 +109,7 @@
     wrap.appendChild(name);
     const kind = statusKind(core);
     const badge = document.createElement("span");
-    const badgeClass = { connected: "tg-approval-badge-running", searching: "tg-approval-badge-starting", error: "tg-approval-badge-failed" }[kind] || "tg-approval-badge-incomplete";
+    const badgeClass = { connected: "tg-approval-badge-running", connecting: "tg-approval-badge-starting", searching: "tg-approval-badge-starting", error: "tg-approval-badge-failed" }[kind] || "tg-approval-badge-incomplete";
     badge.className = `tg-approval-channel-badge ${badgeClass}`;
     const dot = document.createElement("span");
     dot.className = "tg-approval-channel-badge-dot";
@@ -101,6 +123,7 @@
 
   function buildStatusRow(core) {
     const status = core.runtime && core.runtime.watchStatus;
+    const pending = core.runtime && core.runtime.watchPendingConnect;
     const config = getConfig(core.state);
     const row = document.createElement("div");
     row.className = "row";
@@ -109,6 +132,7 @@
     if (!config.enabled) detail = "Enable to connect a Wear OS watch";
     else if (status && status.lastError) detail = status.lastError.hint || status.lastError.message || "Error";
     else if (status && status.connected) detail = "Connected to watch";
+    else if ((status && status.connecting) || pending) detail = "Connecting to watch...";
     row.innerHTML = `<div class="row-text"><span class="row-label">Status</span><span class="row-desc"></span></div>` +
       `<div class="row-control"><span class="hardware-buddy-status-badge hardware-buddy-status-${kind}"></span></div>`;
     row.querySelector(".row-desc").textContent = detail;
@@ -158,9 +182,11 @@
     row.className = "row";
     if (!config.enabled) return row;
 
+    const pending = core.runtime && core.runtime.watchPendingConnect;
     const devices = (status && Array.isArray(status.devices)) ? status.devices : [];
     const connected = status && status.connected;
-    const currentAddr = config.address;
+    const connecting = (status && status.connecting) || !!pending;
+    const currentAddr = (pending && pending.address) || config.address;
     var btnStyle = "padding:4px 12px;font-size:12px;border-radius:6px;border:1px solid #555;background:#333;color:#eee;cursor:pointer;min-height:auto;width:auto;";
 
     row.innerHTML = '<div class="row-text"><span class="row-label">Device</span><span class="row-desc"></span></div>' +
@@ -168,7 +194,28 @@
 
     var controlDiv = row.querySelector(".row-control");
 
-    if (connected && currentAddr) {
+    // pending implies the user just clicked a device; even if status.connected
+    // is still true (we're still attached to the previous device while the
+    // bridge tears it down to switch), surface the connecting branch so the
+    // row reflects the user's intent and offers Cancel.
+    if (pending || (connecting && !connected)) {
+      var connDevice = devices.find(function(d) { return d.address === currentAddr; });
+      var label = (pending && pending.name) || (connDevice ? connDevice.name : (currentAddr ? currentAddr.slice(0, 16) : "watch"));
+      row.querySelector(".row-desc").textContent = "Connecting to " + label + "...";
+      var cancelBtn = document.createElement("button");
+      cancelBtn.type = "button";
+      cancelBtn.textContent = "Cancel";
+      cancelBtn.style.cssText = btnStyle + "border-color:#888;";
+      cancelBtn.addEventListener("click", function() {
+        cancelBtn.disabled = true;
+        if (core.runtime) core.runtime.watchPendingConnect = null;
+        if (window.settingsAPI && typeof window.settingsAPI.command === "function") {
+          window.settingsAPI.command("watch.disconnect");
+        }
+        core.ops.requestRender({ content: true });
+      });
+      controlDiv.appendChild(cancelBtn);
+    } else if (connected && currentAddr) {
       var connName = devices.find(function(d) { return d.address === currentAddr; });
       row.querySelector(".row-desc").textContent = "Connected: " + (connName ? connName.name : currentAddr.slice(0, 16));
 
@@ -179,23 +226,49 @@
       disconnectBtn.addEventListener("click", function() {
         disconnectBtn.textContent = "Disconnecting...";
         disconnectBtn.disabled = true;
-        updateConfig(core, { address: "", enabled: false }).then(function() {
-          setTimeout(function() {
-            updateConfig(core, { enabled: true });
-          }, 500);
-        });
+        if (core.runtime) core.runtime.watchPendingConnect = null;
+        if (window.settingsAPI && typeof window.settingsAPI.command === "function") {
+          window.settingsAPI.command("watch.disconnect");
+        }
+        core.ops.requestRender({ content: true });
       });
       controlDiv.appendChild(disconnectBtn);
     } else {
-      if (devices.length > 0) {
-        row.querySelector(".row-desc").textContent = devices.length + " device(s) found — select one:";
+      var scanning = status && status.scanning;
+      if (scanning) {
+        row.querySelector(".row-desc").textContent = "Scanning for nearby watches...";
+      } else if (devices.length > 0) {
+        row.querySelector(".row-desc").textContent = devices.length + " device(s) found \u2014 select one:";
+      } else if (config.address) {
+        // We have a saved address from a previous connection — offer direct
+        // reconnect so the user doesn't need to scan every time.
+        row.querySelector(".row-desc").textContent = "Last device available";
       } else {
         row.querySelector(".row-desc").textContent = "No devices found";
       }
 
+      // Reconnect button — direct connection to saved address (no scan needed)
+      if (config.address && !scanning) {
+        var reconnectBtn = document.createElement("button");
+        reconnectBtn.type = "button";
+        reconnectBtn.textContent = "Reconnect";
+        reconnectBtn.style.cssText = btnStyle + "border-color:#4ADE80;margin-right:6px;";
+        reconnectBtn.addEventListener("click", function() {
+          reconnectBtn.textContent = "Connecting...";
+          reconnectBtn.disabled = true;
+          if (core.runtime) core.runtime.watchPendingConnect = { address: config.address, name: "", startedAt: Date.now() };
+          if (window.settingsAPI && typeof window.settingsAPI.command === "function") {
+            window.settingsAPI.command("watch.reconnect", { address: config.address });
+          }
+          core.ops.requestRender({ content: true });
+        });
+        controlDiv.appendChild(reconnectBtn);
+      }
+    
       var scanBtn = document.createElement("button");
       scanBtn.type = "button";
-      scanBtn.textContent = "Scan";
+      scanBtn.textContent = scanning ? "Scanning..." : "Scan";
+      scanBtn.disabled = !!scanning;
       scanBtn.style.cssText = btnStyle;
       scanBtn.addEventListener("click", function() {
         scanBtn.textContent = "Scanning...";
@@ -214,15 +287,20 @@
             item.textContent = (dev.name || "Unknown") + "  RSSI " + (dev.rssi || "?");
             item.style.cssText = "display:block;width:100%;margin-bottom:4px;padding:6px 10px;font-size:11px;border-radius:6px;border:1px solid #444;background:#222;color:#ddd;cursor:pointer;text-align:left;min-height:auto;";
             item.addEventListener("click", function() {
-              item.textContent = "Connecting to " + (dev.name || "device") + "...";
-              item.style.borderColor = "#4ADE80";
-              item.disabled = true;
-              for (var btn = list.firstChild; btn; btn = btn.nextSibling) {
-                if (btn !== item) btn.style.display = "none";
-              }
-              updateConfig(core, { address: dev.address }).then(function() {
+              // Local connecting intent: keeps the UI in the "connecting"
+              // branch even if Python's connected status arrives in the same
+              // render frame as the initial publishStatus(connecting=true).
+              if (core.runtime) core.runtime.watchPendingConnect = { address: dev.address, name: dev.name || "", startedAt: Date.now() };
+              // Persist the address (so it survives restarts) and tell the
+              // running sidecar to connect. The adapter's applySettingsChange
+              // forwards address-only updates as a connect command instead of
+              // bouncing the sidecar, so this row stays rendered while the
+              // "connecting" status from the bridge updates the badge.
+              updateConfig(core, { address: dev.address });
+              if (window.settingsAPI && typeof window.settingsAPI.command === "function") {
                 window.settingsAPI.command("watch.connect", { address: dev.address });
-              });
+              }
+              core.ops.requestRender({ content: true });
             });
             list.appendChild(item);
           })(devices[i]);

@@ -64,6 +64,11 @@ function createWatchAdapter(options = {}) {
   let retryAttempt = 0;
   let restartTimer = null;
   let activeConfig = readConfig();
+  // Tracks the time window between user-initiated connect and the first
+  // "connected" status from the bridge. Surfaced to the UI so clicking a
+  // device gives immediate feedback instead of looking dead until BLE settles.
+  let isConnecting = false;
+  let isScanning = false;
 
   // Theme sync state (Layer 2/3): the watch's last-reported fingerprint, whether
   // a transfer is in flight, and the hash we last pushed (so we don't re-push
@@ -92,10 +97,16 @@ function createWatchAdapter(options = {}) {
 
   function publishStatus(extra = {}) {
     const connected = !!(sidecar && sidecar.transport && sidecar.transport.connected);
+    if (connected) isConnecting = false;
     const snapshot = {
       enabled: activeConfig.enabled,
       started,
       connected,
+      // Surface isConnecting even when connected=true (e.g. switching devices
+      // while still attached to the previous one). The panel layer decides
+      // how to combine with its local pending intent.
+      connecting: isConnecting,
+      scanning: isScanning,
       address: activeConfig.address,
       namePrefix: activeConfig.namePrefix,
       permissionsEnabled: activeConfig.permissionsEnabled,
@@ -200,7 +211,13 @@ function createWatchAdapter(options = {}) {
         log(`bridge ${level}: ${message}`);
       },
       onStatus: (status) => {
-        if (status && status.connected === true) retryAttempt = 0;
+        if (status && status.connected === true) {
+          retryAttempt = 0;
+          isConnecting = false;
+        }
+        if ("scanning" in status) {
+          isScanning = !!status.scanning;
+        }
         if (status && status.themeHash) watchThemeHash = status.themeHash;
         publishStatus();
         maybeSyncTheme();
@@ -209,22 +226,38 @@ function createWatchAdapter(options = {}) {
         lastDevices = Array.isArray(items) ? items : [];
         publishStatus();
       },
-      onError: (err) => handleIssue(err),
+      onError: (err) => {
+        // DISCONNECT_STUCK means the BLE link refused to close. Kill the
+        // sidecar process so the OS reclaims the connection, then restart.
+        if (err && (err.code === "DISCONNECT_STUCK" || (err.message && err.message.includes("DISCONNECT_STUCK")))) {
+          log("watch: forcing sidecar restart due to stuck BLE link");
+          cleanup({ keepConfig: true });
+          setTimer(() => { if (activeConfig.enabled) start(); }, 500);
+          return;
+        }
+        isConnecting = false;
+        isScanning = false;
+        handleIssue(err);
+      },
       onTransportStateChanged: (state) => {
         if (state && state.connected === true) {
           retryAttempt = 0;
           lastError = null;
+          isConnecting = false;
           if (controller && typeof controller.resetDedup === "function") controller.resetDedup();
         } else if (state && state.previous && state.previous.connected === true) {
           // Don't call handleIssue here — bridge handles BLE reconnect internally.
           // Adapter only restarts on SIDECAR_EXIT (process death) via log callback.
+          isConnecting = false;
           themeSyncing = false;
           lastSyncedHash = null;
           watchThemeHash = null;
         }
         publishStatus();
+        // Push current state FIRST (small payload, single GATT write) so the
+        // watch sees the live snapshot immediately; theme transfer is queued
+        // afterwards by the onStatus handler that fires right after this.
         if (controller && typeof controller.notifyStateChanged === "function") controller.notifyStateChanged();
-        maybeSyncTheme();
       },
       onThemeSynced: (msg) => {
         themeSyncing = false;
@@ -282,8 +315,18 @@ function createWatchAdapter(options = {}) {
     activeConfig = readConfig();
     if (!activeConfig.enabled) { if (started) cleanup({ keepConfig: true }); publishStatus(); return; }
     if (!started) { start(); return; }
-    const connectionChanged = previous.address !== activeConfig.address || previous.namePrefix !== activeConfig.namePrefix;
-    if (connectionChanged) { cleanup({ keepConfig: true }); start(); }
+    // namePrefix is a spawn-time argument so it requires a sidecar bounce.
+    const namePrefixChanged = previous.namePrefix !== activeConfig.namePrefix;
+    const addressChanged = previous.address !== activeConfig.address;
+    if (namePrefixChanged) { cleanup({ keepConfig: true }); start(); return; }
+    // Address-only change is forwarded to the running sidecar via the connect
+    // command — no process restart, so the device list / scan results in the
+    // settings panel stay rendered and the user sees a connecting state
+    // instead of the row blinking back to "No devices" while we respawn.
+    if (addressChanged && activeConfig.address) {
+      isConnecting = true;
+      if (sidecar && typeof sidecar.connect === "function") sidecar.connect(activeConfig.address);
+    }
     publishStatus();
   }
 
@@ -304,16 +347,51 @@ function createWatchAdapter(options = {}) {
     sidecar.scan();
   }
 
+  function reconnect(address) {
+    if (!started || !sidecar || typeof sidecar.reconnect !== "function") return;
+    const addr = address || activeConfig.address;
+    if (!addr) return;
+    isConnecting = true;
+    publishStatus();
+    sidecar.reconnect(addr);
+  }
+
   function connectDevice(address) {
     if (!started || !sidecar || typeof sidecar.connect !== "function") return;
+    isConnecting = true;
+    publishStatus();
     sidecar.connect(address);
+  }
+
+  function disconnectDevice() {
+    isConnecting = false;
+    if (!started || !sidecar) { publishStatus(); return; }
+    if (typeof sidecar.disconnect === "function") sidecar.disconnect();
+    // Optimistically flip the transport to disconnected so the UI returns
+    // to the device-list / Scan branch immediately. macOS BleakClient.
+    // disconnect() can take a few seconds (or hang) before Python emits
+    // status=false; without this flip, Disconnect appears unresponsive.
+    // If Python later reports a different state, the next status frame
+    // will reconcile via publishStatus().
+    if (sidecar.transport) {
+      sidecar.transport.connected = false;
+      sidecar.transport.secure = false;
+    }
+    // Reset theme-sync bookkeeping the same way onTransportStateChanged would,
+    // so the next reconnect re-queries the watch hash and re-pushes if needed.
+    themeSyncing = false;
+    lastSyncedHash = null;
+    watchThemeHash = null;
+    publishStatus();
   }
 
   return {
     start,
     stop,
     scan,
+    reconnect,
     connectDevice,
+    disconnectDevice,
     applySettingsChange,
     notifyStateChanged,
     notifyPermissionsChanged,

@@ -29,6 +29,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.ParcelUuid
+import android.os.SystemClock
 import android.util.Log
 import com.clawd.watch.ApprovalActivity
 import com.clawd.watch.MainActivity
@@ -99,6 +100,28 @@ class BleService : Service() {
     @Volatile private var connectedDevice: BluetoothDevice? = null
     @Volatile private var isAdvertising = false
     @Volatile private var advertiseRequested = false
+
+    // Connection watchdog: if the central disappears without sending an
+    // LL_TERMINATE_IND (e.g. macOS CoreBluetooth cache), the watch stays
+    // in connected state indefinitely. This timer forces a disconnect
+    // after 30s of no GATT activity, recovering advertising so the watch
+    // can be re-discovered.
+    @Volatile private var lastCentralActivityMs = 0L
+    private val connectionWatchdog = object : Runnable {
+        @SuppressLint("MissingPermission")
+        override fun run() {
+            val device = connectedDevice
+            if (device != null) {
+                val elapsed = SystemClock.elapsedRealtime() - lastCentralActivityMs
+                if (elapsed > 30_000L) {
+                    Log.w(TAG, "No central activity for ${elapsed}ms \u2014 forcing disconnect")
+                    forceDisconnectCentral()
+                    return // Don't repost; advertising will restart the loop on next connect
+                }
+            }
+            handler.postDelayed(this, 10_000L)
+        }
+    }
 
     private fun hasBlePermission(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -180,6 +203,7 @@ class BleService : Service() {
 
     override fun onDestroy() {
         stopAdvertising()
+        handler.removeCallbacks(connectionWatchdog)
         powerManager.stop()
         handler.removeCallbacksAndMessages(null)
         gattServer?.close()
@@ -266,7 +290,10 @@ class BleService : Service() {
                     }
                     Log.i(TAG, "Central connected: ${device.address}")
                     connectedDevice = device
+                    lastCentralActivityMs = SystemClock.elapsedRealtime()
                     stopAdvertising()
+                    handler.removeCallbacks(connectionWatchdog)
+                    handler.postDelayed(connectionWatchdog, 10_000L)
                     handler.post {
                         onConnectionStateChanged?.invoke(true)
                         updateNotification("Connected to ${device.name ?: device.address}")
@@ -277,6 +304,7 @@ class BleService : Service() {
                     if (connectedDevice?.address == device.address) {
                         connectedDevice = null
                         cwd3Subscribers.remove(device.address)
+                        handler.removeCallbacks(connectionWatchdog)
                         handler.post {
                             onConnectionStateChanged?.invoke(false)
                             updateNotification("Disconnected")
@@ -338,6 +366,7 @@ class BleService : Service() {
             offset: Int,
             characteristic: BluetoothGattCharacteristic
         ) {
+            lastCentralActivityMs = SystemClock.elapsedRealtime()
             when (characteristic.uuid) {
                 CHAR_META -> {
                     val meta = JSONObject().apply {
@@ -447,9 +476,13 @@ class BleService : Service() {
         advertiseRequested = false
     }
 
+    @Volatile private var advertiseRetryCount = 0
+    private val MAX_ADVERTISE_RETRIES = 3
+
     private val advertiseCallback = object : AdvertiseCallback() {
         override fun onStartSuccess(settingsInEffect: AdvertiseSettings) {
             isAdvertising = true
+            advertiseRetryCount = 0
             Log.i(TAG, "Advertising started")
             handler.post { updateNotification("Advertising...") }
         }
@@ -457,12 +490,23 @@ class BleService : Service() {
         override fun onStartFailure(errorCode: Int) {
             isAdvertising = false
             advertiseRequested = false
-            Log.e(TAG, "Advertising failed: $errorCode")
-            handler.post { updateNotification("Advertising failed ($errorCode)") }
+            Log.e(TAG, "Advertising failed: $errorCode (retry $advertiseRetryCount/$MAX_ADVERTISE_RETRIES)")
+            // After a cancelConnection the BLE adapter may briefly reject
+            // advertising (INTERNAL_ERROR=4). Retry with back-off so the
+            // watch reliably returns to discoverable state.
+            if (advertiseRetryCount < MAX_ADVERTISE_RETRIES) {
+                advertiseRetryCount++
+                val delay = (500L * advertiseRetryCount)
+                handler.postDelayed({ startAdvertising() }, delay)
+            } else {
+                advertiseRetryCount = 0
+                handler.post { updateNotification("Advertising failed ($errorCode)") }
+            }
         }
     }
 
     private fun dispatchWrite(uuid: UUID, data: ByteArray) {
+        lastCentralActivityMs = SystemClock.elapsedRealtime()
         when (uuid) {
             CHAR_STATE -> handleStateWrite(data)
             CHAR_APPROVAL_REQ -> handleApprovalRequestWrite(data)
@@ -482,7 +526,16 @@ class BleService : Service() {
         val text = data.toString(Charsets.UTF_8)
         Log.i(TAG, "handleStateWrite: ${data.size} bytes")
         try {
-            val msg = WatchMessage.parse(JSONObject(text))
+            val json = JSONObject(text)
+            // Explicit disconnect signal from the desktop: immediately tear down
+            // the link and restart advertising so the watch can be re-discovered
+            // without waiting for the 30s keepalive watchdog.
+            if (json.optString("type") == "disconnect") {
+                Log.i(TAG, "Received explicit disconnect signal from Central")
+                forceDisconnectCentral()
+                return
+            }
+            val msg = WatchMessage.parse(json)
             if (msg != null) {
                 if (msg is WatchMessage.CompactState) {
                     val prev = lastCompactState
@@ -497,6 +550,25 @@ class BleService : Service() {
         } catch (e: Exception) {
             Log.e(TAG, "Bad state payload: ${e.message}")
         }
+    }
+
+    /**
+     * Actively tear down the Central connection and resume advertising.
+     * Called when the desktop sends an explicit `{"type":"disconnect"}` via CWD1,
+     * or by the 30s keepalive watchdog as a fallback for abnormal disconnects.
+     */
+    @SuppressLint("MissingPermission")
+    private fun forceDisconnectCentral() {
+        val device = connectedDevice ?: return
+        try { gattServer?.cancelConnection(device) } catch (_: Exception) {}
+        connectedDevice = null
+        cwd3Subscribers.remove(device.address)
+        handler.removeCallbacks(connectionWatchdog)
+        handler.post {
+            onConnectionStateChanged?.invoke(false)
+            updateNotification("Disconnected")
+        }
+        startAdvertising()
     }
 
     /** Restore the last synced theme from filesDir so it survives a restart. */

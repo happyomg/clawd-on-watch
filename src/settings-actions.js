@@ -1150,6 +1150,17 @@ function watchConnect(payload, deps) {
   return { status: "ok" };
 }
 
+function watchDisconnect(_payload, deps) {
+  if (deps && typeof deps.disconnectWatch === "function") deps.disconnectWatch();
+  return { status: "ok" };
+}
+
+function watchReconnect(payload, deps) {
+  const address = payload && typeof payload.address === "string" ? payload.address : "";
+  if (deps && typeof deps.reconnectWatch === "function") deps.reconnectWatch(address);
+  return { status: "ok" };
+}
+
 async function watchInstallBleak(_payload, _deps) {
   const { execFile } = require("child_process");
   const python = process.env.CLAWD_WATCH_PYTHON || process.env.CLAWD_HARDWARE_BUDDY_PYTHON || "python";
@@ -1205,6 +1216,8 @@ const commandRegistry = {
   "watch.restart": watchRestart,
   "watch.scan": watchScan,
   "watch.connect": watchConnect,
+  "watch.disconnect": watchDisconnect,
+  "watch.reconnect": watchReconnect,
 };
 
 module.exports = {

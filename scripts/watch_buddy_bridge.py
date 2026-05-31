@@ -65,12 +65,14 @@ def emit_error(code, message):
     emit({"type": "error", "code": code, "message": message})
 
 
-async def scan_for_watch(name_prefix, timeout=10.0):
-    devices_advs = await BleakScanner.discover(timeout=timeout, return_adv=True)
+def _filter_devices(devices_advs, name_prefix):
     results = []
     for addr, (device, adv) in devices_advs.items():
         uuids = adv.service_uuids or []
         name = device.name or ""
+        sys.stderr.write(
+            f"[scan] seen addr={addr} name={name!r} uuids={uuids} rssi={adv.rssi}\n"
+        )
         if CWD_SERVICE in uuids or (name_prefix and name.startswith(name_prefix)):
             results.append({
                 "address": device.address,
@@ -78,6 +80,23 @@ async def scan_for_watch(name_prefix, timeout=10.0):
                 "rssi": adv.rssi,
             })
     return results
+
+
+async def scan_for_watch(name_prefix, timeout=10.0):
+    # Targeted scan with service UUID filter (uses macOS cache, fast)
+    devices_advs = await BleakScanner.discover(
+        timeout=timeout, return_adv=True, service_uuids=[CWD_SERVICE]
+    )
+    results = _filter_devices(devices_advs, name_prefix)
+    if results:
+        return results
+    # Fallback: general scan — macOS may not report service UUID in adv data
+    # for peripherals that were recently connected (cache stale state).
+    sys.stderr.write("[scan] targeted scan empty, trying general scan\n")
+    devices_advs = await BleakScanner.discover(
+        timeout=timeout, return_adv=True
+    )
+    return _filter_devices(devices_advs, name_prefix)
 
 
 async def read_stdin_lines(queue, on_eof=None):
@@ -107,6 +126,9 @@ async def run(args):
     reconnect_attempt = 0
     reconnect_task = None
     stopping = False
+    manual_disconnect = False
+    current_op = None
+    disconnect_event = asyncio.Event()
     stdin_queue = asyncio.Queue()
 
     def on_stdin_eof():
@@ -121,12 +143,62 @@ async def run(args):
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, lambda: stdin_queue.put_nowait(None))
 
+    # ── Cancellable GATT wrapper ──────────────────────────────────────────
+    async def do_gatt(coro):
+        nonlocal current_op
+        current_op = asyncio.ensure_future(coro)
+        try:
+            return await current_op
+        finally:
+            current_op = None
+
+    # ── Disconnect watcher (priority interrupt) ───────────────────────────
+    async def disconnect_watcher():
+        nonlocal client, connected_name, manual_disconnect, reconnect_task, reconnect_attempt
+        while not stopping:
+            await disconnect_event.wait()
+            disconnect_event.clear()
+            manual_disconnect = True
+            if reconnect_task:
+                reconnect_task.cancel()
+                reconnect_task = None
+            reconnect_attempt = 0
+            if current_op and not current_op.done():
+                current_op.cancel()
+            c = client
+            client = None
+            if c:
+                try:
+                    goodbye = json.dumps({"type": "disconnect"}, separators=(",", ":")).encode("utf-8")
+                    await asyncio.wait_for(c.write_gatt_char(CWD1_STATE, goodbye, response=False), timeout=0.2)
+                except Exception:
+                    pass
+                try:
+                    await asyncio.wait_for(c.disconnect(), timeout=1.0)
+                except Exception:
+                    pass
+                still_connected = False
+                try:
+                    still_connected = c.is_connected
+                except Exception:
+                    pass
+                if still_connected:
+                    emit_error("DISCONNECT_STUCK", "BLE link did not close; sidecar restart recommended")
+            connected_name = None
+            emit_status(False)
+
+    watcher_task = asyncio.ensure_future(disconnect_watcher())
+    watcher_task.add_done_callback(lambda t: t.exception() if not t.cancelled() and t.exception() else None)
+
+    # ── Reconnect logic ───────────────────────────────────────────────────
     async def schedule_reconnect():
         nonlocal reconnect_task
         if stopping or reconnect_task is not None:
             return
         addr = last_address
         if not addr:
+            reconnect_task = asyncio.ensure_future(reconnect_via_scan())
+        elif reconnect_attempt >= 3:
             reconnect_task = asyncio.ensure_future(reconnect_via_scan())
         else:
             reconnect_task = asyncio.ensure_future(reconnect_to(addr))
@@ -153,9 +225,18 @@ async def run(args):
         try:
             if stopping or (client and client.is_connected):
                 return
-            await do_scan()
-            if not client or not client.is_connected:
+            items = await scan_for_watch(args.name_prefix, timeout=args.scan_timeout)
+            emit({"type": "devices", "items": items})
+            for item in items:
+                if last_address and item["address"].lower() == last_address.lower():
+                    await connect_to(item["address"])
+                    return
+            if items:
+                await connect_to(items[0]["address"])
+            else:
                 await schedule_reconnect()
+        except Exception:
+            pass
         finally:
             reconnect_task = None
 
@@ -163,19 +244,21 @@ async def run(args):
         nonlocal client
         if client:
             try:
-                await client.disconnect()
+                await asyncio.wait_for(client.disconnect(), timeout=2.0)
             except Exception:
                 pass
             client = None
             emit_status(False)
-            if not stopping:
+            if not stopping and not manual_disconnect:
                 await schedule_reconnect()
 
     def on_disconnect(_client):
         nonlocal client
+        if _client is not client and client is not None:
+            return
         client = None
         emit_status(False)
-        if not stopping:
+        if not stopping and not manual_disconnect:
             asyncio.ensure_future(schedule_reconnect())
 
     def on_cwd3_notify(_sender, data):
@@ -189,10 +272,19 @@ async def run(args):
         except (json.JSONDecodeError, UnicodeDecodeError) as e:
             emit_error("CWD3_PARSE_ERROR", f"Bad approval response: {e}")
 
+    # ── Connect ───────────────────────────────────────────────────────────
     async def connect_to(address):
-        nonlocal client, connected_name, last_address, reconnect_attempt
+        nonlocal client, connected_name, last_address, reconnect_attempt, reconnect_task
+        if reconnect_task:
+            reconnect_task.cancel()
+            reconnect_task = None
         if client and client.is_connected:
-            await client.disconnect()
+            old_client = client
+            client = None
+            try:
+                await asyncio.wait_for(old_client.disconnect(), timeout=3.0)
+            except Exception:
+                pass
 
         try:
             c = BleakClient(address, disconnected_callback=on_disconnect)
@@ -211,59 +303,58 @@ async def run(args):
             client = c
             last_address = address
             reconnect_attempt = 0
-            # Surface the watch's active theme fingerprint so the controller can
-            # decide whether a theme sync (CWD5) is due.
             emit_status(True, connected_name, theme_hash)
             if last_snapshot_data is not None:
                 try:
-                    await c.write_gatt_char(CWD1_STATE, last_snapshot_data)
+                    await asyncio.wait_for(
+                        c.write_gatt_char(CWD1_STATE, last_snapshot_data, response=True),
+                        timeout=3.0,
+                    )
                 except Exception:
                     pass
         except Exception as e:
             emit_error("CONNECT_FAILED", str(e))
 
+    # ── Scan (no auto-connect, emits scanning status) ─────────────────────
     async def do_scan():
+        emit({"type": "status", "scanning": True})
         try:
             items = await scan_for_watch(args.name_prefix, timeout=args.scan_timeout)
             emit({"type": "devices", "items": items})
-            if args.address:
-                for item in items:
-                    if item["address"].lower() == args.address.lower():
-                        await connect_to(item["address"])
-                        return
-            elif len(items) == 1:
-                await connect_to(items[0]["address"])
         except Exception as e:
             emit_error("SCAN_FAILED", str(e))
+        finally:
+            emit({"type": "status", "scanning": False})
 
-    # Initial action: connect directly or scan
+    # ── Initial action ────────────────────────────────────────────────────
     if args.address:
         await connect_to(args.address)
     else:
         await do_scan()
 
     if not client or not client.is_connected:
-        await schedule_reconnect()
+        if not manual_disconnect:
+            await schedule_reconnect()
 
-    # Main loop: read stdin commands, with periodic health check
+    # ── Main loop ─────────────────────────────────────────────────────────
     while True:
         try:
             msg = await asyncio.wait_for(stdin_queue.get(), timeout=15.0)
         except asyncio.TimeoutError:
             if client and client.is_connected:
                 try:
-                    await client.read_gatt_char(CWD4_META)
+                    probe = last_snapshot_data if last_snapshot_data is not None else b"{}"
+                    await do_gatt(asyncio.wait_for(
+                        client.write_gatt_char(CWD1_STATE, probe, response=True),
+                        timeout=5.0,
+                    ))
+                except asyncio.CancelledError:
+                    pass
                 except Exception:
-                    emit_error("HEALTH_CHECK_FAILED", "CWD4 read failed, reconnecting")
+                    emit_error("HEALTH_CHECK_FAILED", "liveness probe failed, reconnecting")
                     await force_disconnect()
-                    continue
-                if last_snapshot_data is not None:
-                    try:
-                        await client.write_gatt_char(CWD1_STATE, last_snapshot_data)
-                    except Exception:
-                        await force_disconnect()
             elif not client or not client.is_connected:
-                if not reconnect_task and not stopping:
+                if not reconnect_task and not stopping and not manual_disconnect:
                     await schedule_reconnect()
             continue
         if msg is None:
@@ -277,7 +368,9 @@ async def run(args):
             last_snapshot_data = data.encode("utf-8")
             if client and client.is_connected:
                 try:
-                    await client.write_gatt_char(CWD1_STATE, last_snapshot_data)
+                    await do_gatt(client.write_gatt_char(CWD1_STATE, last_snapshot_data))
+                except asyncio.CancelledError:
+                    pass
                 except Exception as e:
                     emit_error("WRITE_FAILED", str(e))
                     await force_disconnect()
@@ -287,7 +380,9 @@ async def run(args):
                 req = {k: v for k, v in msg.items() if k != "type"}
                 data = json.dumps(req, ensure_ascii=False, separators=(",", ":"))
                 try:
-                    await client.write_gatt_char(CWD2_APPROVAL_REQ, data.encode("utf-8"))
+                    await do_gatt(client.write_gatt_char(CWD2_APPROVAL_REQ, data.encode("utf-8")))
+                except asyncio.CancelledError:
+                    pass
                 except Exception as e:
                     emit_error("WRITE_FAILED", str(e))
                     await force_disconnect()
@@ -302,10 +397,13 @@ async def run(args):
                 ok = True
                 try:
                     for fr in frames:
+                        if disconnect_event.is_set():
+                            ok = False
+                            break
                         payload = json.dumps(fr, ensure_ascii=False, separators=(",", ":"))
-                        # response=True paces the stream (each write is ack'd),
-                        # avoiding flooding the peripheral's write queue.
-                        await client.write_gatt_char(CWD5_THEME, payload.encode("utf-8"), response=True)
+                        await do_gatt(client.write_gatt_char(CWD5_THEME, payload.encode("utf-8"), response=True))
+                except asyncio.CancelledError:
+                    ok = False
                 except Exception as e:
                     ok = False
                     emit_error("THEME_WRITE_FAILED", str(e))
@@ -320,6 +418,7 @@ async def run(args):
                     reconnect_task.cancel()
                     reconnect_task = None
                 reconnect_attempt = 0
+                manual_disconnect = False
                 await connect_to(addr)
                 if not client or not client.is_connected:
                     if not stopping:
@@ -330,10 +429,34 @@ async def run(args):
                 reconnect_task.cancel()
                 reconnect_task = None
             reconnect_attempt = 0
+            manual_disconnect = False
             await do_scan()
+
+        elif msg_type == "reconnect":
+            addr = msg.get("address") or last_address or args.address
+            if addr:
+                if reconnect_task:
+                    reconnect_task.cancel()
+                    reconnect_task = None
+                reconnect_attempt = 0
+                manual_disconnect = False
+                await connect_to(addr)
+                if not client or not client.is_connected:
+                    if not stopping:
+                        await schedule_reconnect()
+            else:
+                emit_error("NO_ADDRESS", "No saved address to reconnect to")
+
+        elif msg_type == "disconnect":
+            disconnect_event.set()
 
         elif msg_type == "stop":
             break
+
+    # ── Shutdown ──────────────────────────────────────────────────────────
+    stopping = True
+    disconnect_event.set()
+    watcher_task.cancel()
 
     stopping = True
     if reconnect_task:
