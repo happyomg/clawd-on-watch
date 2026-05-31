@@ -35,10 +35,8 @@ class FlickDetector(
     private var shakeDirection = 0 // 1 = positive, -1 = negative
 
     // Sensitivity tuning
-    private var flickThreshold = DEFAULT_FLICK_THRESHOLD
-    private var flickDeltaThreshold = DEFAULT_DELTA_THRESHOLD
-    private var successCount = 0
-    private var falsePositiveCount = 0
+    private val flickThreshold = DEFAULT_FLICK_THRESHOLD
+    private val flickDeltaThreshold = DEFAULT_DELTA_THRESHOLD
 
     companion object {
         private const val DEFAULT_FLICK_THRESHOLD = 18f
@@ -48,9 +46,6 @@ class FlickDetector(
         private const val SHAKE_DELTA_THRESHOLD = 10f
         private const val SHAKE_WINDOW_MS = 1500L
         private const val REQUIRED_SHAKES = 3
-        private const val SENSITIVITY_ADJUST_INTERVAL = 20
-        private const val MIN_THRESHOLD = 10f
-        private const val MAX_THRESHOLD = 25f
     }
 
     fun start() {
@@ -90,7 +85,6 @@ class FlickDetector(
                 lastFlickTime = now
                 vibrateConfirm()
                 onGesture(GestureType.FLICK_APPROVE)
-                recordSuccess()
             }
         }
     }
@@ -121,28 +115,6 @@ class FlickDetector(
         if (now - lastShakeTime > SHAKE_WINDOW_MS) {
             shakeCount = 0
         }
-    }
-
-    private fun recordSuccess() {
-        successCount++
-        adjustSensitivity()
-    }
-
-    private fun adjustSensitivity() {
-        val total = successCount + falsePositiveCount
-        if (total < SENSITIVITY_ADJUST_INTERVAL) return
-
-        val fpRate = falsePositiveCount.toFloat() / total
-        if (fpRate > 0.3f) {
-            flickThreshold = (flickThreshold + 1f).coerceAtMost(MAX_THRESHOLD)
-            flickDeltaThreshold = (flickDeltaThreshold + 0.5f).coerceAtMost(MAX_THRESHOLD)
-        } else if (fpRate < 0.1f && successCount > 10) {
-            flickThreshold = (flickThreshold - 0.5f).coerceAtLeast(MIN_THRESHOLD)
-            flickDeltaThreshold = (flickDeltaThreshold - 0.25f).coerceAtLeast(MIN_THRESHOLD * 0.6f)
-        }
-
-        successCount = 0
-        falsePositiveCount = 0
     }
 
     private fun vibrateConfirm() {

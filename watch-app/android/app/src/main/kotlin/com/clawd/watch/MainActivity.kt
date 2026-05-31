@@ -120,6 +120,7 @@ class MainActivity : AppCompatActivity() {
         if (bound) {
             bleService?.onWatchMessage = null
             bleService?.onConnectionStateChanged = null
+            bleService?.onPowerModeChanged = null
             unbindService(connection)
             bound = false
         }

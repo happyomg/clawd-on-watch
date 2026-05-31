@@ -98,10 +98,12 @@ class ApprovalActivity : AppCompatActivity() {
         val expiresAt = intent.getLongExtra("expiresAt", 0L)
         val delay = when {
             timeoutMs > 0 -> timeoutMs
-            expiresAt > 0 -> expiresAt - System.currentTimeMillis()
+            expiresAt > 0 -> maxOf(0L, expiresAt - System.currentTimeMillis())
             else -> 0L
         }
-        if (delay > 0) {
+        if (expiresAt > 0 && delay == 0L) {
+            handler.post { onTimeout() }
+        } else if (delay > 0) {
             handler.postDelayed({ onTimeout() }, delay)
         }
     }

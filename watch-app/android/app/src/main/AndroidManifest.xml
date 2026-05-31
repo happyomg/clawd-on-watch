@@ -48,7 +48,7 @@
         <!-- Pairing activity: BLE advertise + wait for Central -->
         <activity
             android:name=".PairingActivity"
-            android:exported="true"
+            android:exported="false"
             android:theme="@style/Theme.ClawdWatch" />
 
         <!-- Approval activity: permission request UI -->

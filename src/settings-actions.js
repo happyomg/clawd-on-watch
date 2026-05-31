@@ -1132,7 +1132,9 @@ const repairDoctorIssue = createRepairDoctorIssue({
 });
 
 function watchRestart(_payload, deps) {
-  if (deps && typeof deps.restartWatch === "function") return deps.restartWatch();
+  if (deps && typeof deps.restartWatch === "function") {
+    deps.restartWatch();
+  }
   return { status: "ok" };
 }
 

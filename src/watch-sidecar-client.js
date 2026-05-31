@@ -23,6 +23,7 @@ class WatchSidecarClient {
 
     this.proc = null;
     this.started = false;
+    this._stopping = false;
     this._stdoutBuf = "";
     this._stderrBuf = "";
 
@@ -70,14 +71,17 @@ class WatchSidecarClient {
     });
 
     this.proc.on("exit", (code, signal) => {
+      if (this._stopping) { this._stopping = false; return; }
       this.started = false;
+      const wasConnected = this.transport.connected;
       this.transport.connected = false;
       this.transport.secure = false;
       this.log("info", `sidecar exited code=${code} signal=${signal}`);
-      this.onTransportStateChanged({ connected: false, previous: { connected: true } });
+      this.onTransportStateChanged({ connected: false, previous: { connected: wasConnected } });
     });
 
     this.proc.on("error", (err) => {
+      if (this._stopping) return;
       this.started = false;
       this.onError(err);
     });
@@ -85,6 +89,7 @@ class WatchSidecarClient {
 
   stop() {
     if (!this.proc) return;
+    this._stopping = true;
     this._writeStdin({ type: "stop" });
     try { this.proc.kill("SIGTERM"); } catch (_) {}
     this.proc = null;

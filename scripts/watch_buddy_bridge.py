@@ -110,7 +110,8 @@ async def run(args):
         nonlocal stopping
         stopping = True
 
-    asyncio.ensure_future(read_stdin_lines(stdin_queue, on_eof=on_stdin_eof))
+    stdin_task = asyncio.ensure_future(read_stdin_lines(stdin_queue, on_eof=on_stdin_eof))
+    stdin_task.add_done_callback(lambda t: t.exception() if not t.cancelled() and t.exception() else None)
 
     async def schedule_reconnect():
         nonlocal reconnect_task
@@ -127,24 +128,28 @@ async def run(args):
         delay = RECONNECT_DELAYS[min(reconnect_attempt, len(RECONNECT_DELAYS) - 1)]
         reconnect_attempt += 1
         await asyncio.sleep(delay)
-        reconnect_task = None
-        if stopping or (client and client.is_connected):
-            return
-        await connect_to(address)
-        if not client or not client.is_connected:
-            await schedule_reconnect()
+        try:
+            if stopping or (client and client.is_connected):
+                return
+            await connect_to(address)
+            if not client or not client.is_connected:
+                await schedule_reconnect()
+        finally:
+            reconnect_task = None
 
     async def reconnect_via_scan():
         nonlocal reconnect_task, reconnect_attempt
         delay = RECONNECT_DELAYS[min(reconnect_attempt, len(RECONNECT_DELAYS) - 1)]
         reconnect_attempt += 1
         await asyncio.sleep(delay)
-        reconnect_task = None
-        if stopping or (client and client.is_connected):
-            return
-        await do_scan()
-        if not client or not client.is_connected:
-            await schedule_reconnect()
+        try:
+            if stopping or (client and client.is_connected):
+                return
+            await do_scan()
+            if not client or not client.is_connected:
+                await schedule_reconnect()
+        finally:
+            reconnect_task = None
 
     async def force_disconnect():
         nonlocal client
@@ -173,8 +178,8 @@ async def run(args):
                 "requestId": resp.get("requestId", ""),
                 "decision": resp.get("decision", "deny"),
             })
-        except Exception:
-            pass
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            emit_error("CWD3_PARSE_ERROR", f"Bad approval response: {e}")
 
     async def connect_to(address):
         nonlocal client, connected_name, last_address, reconnect_attempt
@@ -304,6 +309,7 @@ async def run(args):
 
 
 def main():
+    import signal
     parser = argparse.ArgumentParser(description="Watch Buddy Bridge")
     parser.add_argument("--backend", default="watch")
     parser.add_argument("--name-prefix", default="Clawd")
@@ -312,9 +318,13 @@ def main():
     parser.add_argument("--connect-timeout", type=float, default=15.0)
     args = parser.parse_args()
 
+    def sigterm_handler(signum, frame):
+        raise SystemExit(0)
+    signal.signal(signal.SIGTERM, sigterm_handler)
+
     try:
         asyncio.run(run(args))
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, SystemExit):
         pass
 
 

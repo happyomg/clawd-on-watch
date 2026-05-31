@@ -81,10 +81,10 @@ class BleService : Service() {
     }
 
     private val binder = LocalBinder()
-    private var gattServer: BluetoothGattServer? = null
-    private var advertiser: BluetoothLeAdvertiser? = null
-    private var connectedDevice: BluetoothDevice? = null
-    private var isAdvertising = false
+    @Volatile private var gattServer: BluetoothGattServer? = null
+    @Volatile private var advertiser: BluetoothLeAdvertiser? = null
+    @Volatile private var connectedDevice: BluetoothDevice? = null
+    @Volatile private var isAdvertising = false
 
     private fun hasBlePermission(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -99,7 +99,7 @@ class BleService : Service() {
     private val handler = Handler(Looper.getMainLooper())
 
     // Characteristic references for sending notifications
-    private var charApprovalResp: BluetoothGattCharacteristic? = null
+    @Volatile private var charApprovalResp: BluetoothGattCharacteristic? = null
 
     // Thread-safe: accessed from GATT Binder threads and main thread
     private val cwd3Subscribers = java.util.Collections.synchronizedSet(mutableSetOf<String>())
@@ -109,7 +109,7 @@ class BleService : Service() {
     var onConnectionStateChanged: ((Boolean) -> Unit)? = null
     var onPowerModeChanged: ((PowerManager.PowerMode) -> Unit)? = null
 
-    private var lastCompactState: WatchMessage.CompactState? = null
+    @Volatile private var lastCompactState: WatchMessage.CompactState? = null
 
     fun getLastState(): WatchMessage.CompactState? {
         if (lastCompactState != null) return lastCompactState
@@ -279,8 +279,10 @@ class BleService : Service() {
         }
 
         override fun onExecuteWrite(device: BluetoothDevice, requestId: Int, execute: Boolean) {
+            val entries = synchronized(preparedWriteBuffer) { preparedWriteBuffer.toMap() }
+            synchronized(preparedWriteBuffer) { preparedWriteBuffer.clear() }
             if (execute) {
-                for ((handle, data) in preparedWriteBuffer) {
+                for ((handle, data) in entries) {
                     val uuid = findCharUuidByHandle(handle)
                     if (uuid != null) {
                         Log.i(TAG, "Execute write: uuid=$uuid len=${data.size}")
@@ -288,7 +290,6 @@ class BleService : Service() {
                     }
                 }
             }
-            preparedWriteBuffer.clear()
             gattServer?.sendResponse(device, requestId, android.bluetooth.BluetoothGatt.GATT_SUCCESS, 0, null)
         }
 
