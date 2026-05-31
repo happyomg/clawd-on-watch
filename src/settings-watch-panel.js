@@ -123,12 +123,14 @@
       btn.style.cssText = "margin-top:6px;padding:4px 12px;font-size:12px;border-radius:6px;border:1px solid #555;background:#333;color:#eee;cursor:pointer;";
       btn.addEventListener("click", () => {
         btn.disabled = true;
-        btn.textContent = "Installing...";
+        btn.textContent = "Installing bleak...";
         window.settingsAPI.command("watch.installBleak").then((result) => {
           if (result && result.status === "ok") {
-            btn.textContent = "Installed! Reconnecting...";
+            btn.textContent = "Connecting to watch...";
             btn.style.borderColor = "#4ADE80";
-            core.ops.showToast("bleak installed — reconnecting", { error: false });
+            // Clear stale error from runtime so panel rerenders as "Searching"
+            if (core.runtime) core.runtime.watchStatus = { started: true, connected: false, lastError: null };
+            core.ops.requestRender({ content: true });
             window.settingsAPI.command("watch.restart");
           } else {
             btn.textContent = "Failed: " + ((result && result.message) || "");
