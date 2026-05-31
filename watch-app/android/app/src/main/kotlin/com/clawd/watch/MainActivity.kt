@@ -233,6 +233,7 @@ class MainActivity : AppCompatActivity() {
             stateChip.text = "Preparing…"
             stateChip.setTextColor(0xAAFFFFFF.toInt())
         } else {
+            stateChip.visibility = android.view.View.GONE
             updateConnectionState(bleConnected)
         }
     }
