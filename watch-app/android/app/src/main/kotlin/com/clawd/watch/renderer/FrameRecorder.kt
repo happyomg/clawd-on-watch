@@ -3,9 +3,11 @@ package com.clawd.watch.renderer
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.Canvas
+import android.graphics.Rect
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.Looper
+import android.view.PixelCopy
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
@@ -16,25 +18,17 @@ import java.io.File
 import java.util.concurrent.Executors
 
 /**
- * Records one animation loop of a CSS-animated SVG into a frame sequence so the
- * steady-state renderer can play it with a plain ImageView instead of a
- * permanently-resident WebView.
+ * Records one animation loop of a CSS-animated SVG into a frame sequence.
  *
- * "Foreground sync mode": the recording WebView is added to [parent] *visibly*
- * and on top, so the user watches the real animation while it is captured (this
- * is the expected sync UX and guarantees the CSS timeline keeps advancing — an
- * off-screen WebView can be throttled/paused). A software layer is used so
- * [View.draw] captures the exact current frame. The WebView is destroyed when
- * recording finishes.
+ * Capture uses [PixelCopy] (API 26+) which reads from the hardware-composited
+ * surface — this works reliably on all devices whereas `View.draw(Canvas)` with
+ * a software layer often produces blank frames on real hardware. The WebView
+ * renders normally with hardware acceleration; PixelCopy grabs the
+ * already-composited pixels from the GPU.
  *
- * Loop alignment: the JS harness reports the longest finite animation cycle;
- * we capture exactly that many frames at [fps] and persist (loopMs, count) in
- * meta.json so playback can space frames as loopMs/count — a seamless loop even
- * when the cycle isn't a clean multiple of the frame interval.
- *
- * Frames are captured on the main thread (WebView is single-threaded) and
- * WebP-compressed on a worker. Best-effort: any failure yields an empty result
- * and the caller falls back to live rendering.
+ * The recording WebView is added to [parent] *visibly* (foreground sync mode)
+ * so the user watches the real animation while it is captured. It is destroyed
+ * when recording finishes.
  */
 class FrameRecorder(
     private val context: Context,
@@ -45,7 +39,7 @@ class FrameRecorder(
     companion object {
         private const val TAG = "FrameRecorder"
         private const val MIN_FRAMES = 12
-        private const val MAX_FRAMES = 100        // 5s at 20fps — caps cache/memory
+        private const val MAX_FRAMES = 100
         private const val DEFAULT_LOOP_MS = 2000L
         private const val READY_TIMEOUT_MS = 8000L
         private const val WEBP_QUALITY = 90
@@ -57,7 +51,7 @@ class FrameRecorder(
     @Volatile private var finished = false
 
     @SuppressLint("SetJavaScriptEnabled")
-    fun record(svgText: String, outputDir: File, onComplete: (List<File>) -> Unit) {
+    fun record(svgText: String, outputDir: File, onCaptureStarted: (() -> Unit)? = null, onComplete: (List<File>) -> Unit) {
         val frameIntervalMs = (1000L / fps).coerceAtLeast(1L)
         val webView: WebView
         try {
@@ -81,30 +75,39 @@ class FrameRecorder(
         }
 
         webView.apply {
-            layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
             setBackgroundColor(0x00000000)
-            // Software layer: visible foreground render AND drawable to a Bitmap.
-            setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+            setLayerType(View.LAYER_TYPE_HARDWARE, null)
             settings.javaScriptEnabled = true
             settings.allowFileAccess = false
             isVerticalScrollBarEnabled = false
             isHorizontalScrollBarEnabled = false
             addJavascriptInterface(
-                Bridge { loopMs -> onReady(this, loopMs, frameIntervalMs, outputDir, ::finish) },
+                Bridge { loopMs ->
+                    main.post { onCaptureStarted?.invoke() }
+                    onReady(this, loopMs, frameIntervalMs, outputDir, ::finish)
+                },
                 "AndroidRec"
             )
         }
 
         try {
-            parent.addView(webView) // on top + visible — foreground recording
+            parent.addView(webView)
         } catch (e: Exception) {
             Log.w(TAG, "attach failed: ${e.message}")
             finish(emptyList())
             return
         }
 
-        webView.loadDataWithBaseURL("file:///android_asset/", buildHarness(svgText), "text/html", "utf-8", null)
-        main.postDelayed({ if (!finished) { Log.w(TAG, "ready timeout"); finish(emptyList()) } }, READY_TIMEOUT_MS)
+        webView.loadDataWithBaseURL(
+            "file:///android_asset/", buildHarness(svgText), "text/html", "utf-8", null
+        )
+        main.postDelayed({
+            if (!finished) { Log.w(TAG, "ready timeout"); finish(emptyList()) }
+        }, READY_TIMEOUT_MS)
     }
 
     private fun onReady(
@@ -117,52 +120,93 @@ class FrameRecorder(
         if (finished) return
         val effectiveLoop = if (loopMs <= 0) DEFAULT_LOOP_MS else loopMs
         val frameCount = ((effectiveLoop / frameIntervalMs).toInt()).coerceIn(MIN_FRAMES, MAX_FRAMES)
-        // Real cycle covered by the frames we actually capture — used for
-        // seamless playback spacing.
         val coveredLoopMs = frameCount * frameIntervalMs
         outputDir.mkdirs()
         val written = arrayOfNulls<File>(frameCount)
         var index = 0
+        val pendingWrites = java.util.concurrent.atomic.AtomicInteger(0)
+
+        val pixelCopyThread = HandlerThread("FrameRecCapture").apply { start() }
+        val pixelCopyHandler = Handler(pixelCopyThread.looper)
+
+        fun tryFinalize() {
+            if (pendingWrites.get() > 0) return
+            writeMeta(outputDir, coveredLoopMs, frameCount)
+            pixelCopyThread.quitSafely()
+            finish(written.filterNotNull())
+        }
 
         val capture = object : Runnable {
             override fun run() {
                 if (finished) return
                 if (index >= frameCount) {
-                    writeMeta(outputDir, coveredLoopMs, frameCount)
-                    // Flush compression queue before reporting the files.
-                    io.execute { finish(written.filterNotNull()) }
+                    io.execute { tryFinalize() }
                     return
                 }
-                val bmp = try {
-                    Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888).also { b ->
-                        webView.draw(Canvas(b))
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "capture failed @${index}: ${e.message}")
-                    null
-                }
+
+                val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
                 val i = index
                 index++
-                if (bmp != null) {
-                    val out = File(outputDir, "%03d.webp".format(i))
-                    io.execute {
-                        try {
-                            out.outputStream().use { os ->
-                                @Suppress("DEPRECATION")
-                                bmp.compress(Bitmap.CompressFormat.WEBP, WEBP_QUALITY, os)
-                            }
-                            written[i] = out
-                        } catch (e: Exception) {
-                            Log.w(TAG, "compress failed @${i}: ${e.message}")
-                        } finally {
-                            bmp.recycle()
-                        }
+
+                try {
+                    val loc = IntArray(2)
+                    webView.getLocationInWindow(loc)
+                    val srcRect = Rect(loc[0], loc[1], loc[0] + webView.width, loc[1] + webView.height)
+
+                    val activity = findActivity(webView)
+                    if (activity == null) {
+                        Log.w(TAG, "no window for PixelCopy")
+                        bmp.recycle()
+                        main.postDelayed(this, frameIntervalMs)
+                        return
                     }
+
+                    pendingWrites.incrementAndGet()
+                    PixelCopy.request(
+                        activity.window, srcRect, bmp,
+                        { result ->
+                            if (result == PixelCopy.SUCCESS) {
+                                val out = File(outputDir, "%03d.webp".format(i))
+                                io.execute {
+                                    try {
+                                        out.outputStream().use { os ->
+                                            @Suppress("DEPRECATION")
+                                            bmp.compress(Bitmap.CompressFormat.WEBP, WEBP_QUALITY, os)
+                                        }
+                                        written[i] = out
+                                    } catch (e: Exception) {
+                                        Log.w(TAG, "compress failed @$i: ${e.message}")
+                                    } finally {
+                                        bmp.recycle()
+                                        pendingWrites.decrementAndGet()
+                                    }
+                                }
+                            } else {
+                                Log.w(TAG, "PixelCopy failed @$i result=$result")
+                                bmp.recycle()
+                                pendingWrites.decrementAndGet()
+                            }
+                        },
+                        pixelCopyHandler
+                    )
+                } catch (e: Exception) {
+                    Log.w(TAG, "capture failed @$i: ${e.message}")
+                    bmp.recycle()
                 }
+
                 main.postDelayed(this, frameIntervalMs)
             }
         }
         main.post(capture)
+    }
+
+    private fun findActivity(view: View): android.app.Activity? {
+        var ctx = view.context
+        while (ctx is android.content.ContextWrapper) {
+            if (ctx is android.app.Activity) return ctx
+            ctx = ctx.baseContext
+        }
+        return null
     }
 
     private fun writeMeta(dir: File, loopMs: Long, count: Int) {
@@ -174,7 +218,6 @@ class FrameRecorder(
         }
     }
 
-    /** JS → Kotlin: reports the SVG's loop duration in ms once layout settles. */
     private class Bridge(val onReady: (Long) -> Unit) {
         @JavascriptInterface
         fun ready(loopMs: Double) {
@@ -190,7 +233,7 @@ class FrameRecorder(
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;background:transparent;overflow:hidden}
 #c{width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden}
-#c svg{display:block;width:90%;height:90%;object-fit:contain}
+#c svg{display:block;max-width:80%;max-height:80%}
 </style></head>
 <body><div id="c">$svgText</div>
 <script>

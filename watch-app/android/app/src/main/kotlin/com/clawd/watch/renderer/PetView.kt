@@ -54,19 +54,10 @@ class PetView @JvmOverloads constructor(
         text = "…"
     }
 
-    /** Full-screen overlay shown during foreground recording. */
-    private val syncOverlay = FrameLayout(context).apply {
-        setBackgroundColor(0xCC000000.toInt())
-        visibility = GONE
-        val label = TextView(context).apply {
-            setTextColor(Color.WHITE)
-            textSize = 13f
-            gravity = Gravity.CENTER
-            text = "🎬 Preparing animation…\nPlease wait"
-            setLineSpacing(6f, 1f)
-        }
-        addView(label, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.CENTER))
-    }
+    /**
+     * Sync overlay is managed at the Activity level (outside PetView) so that
+     * PixelCopy captures only the WebView content without UI chrome.
+     */
 
     private val player = FramePlayer()
     private var currentSvg: String = ""
@@ -76,6 +67,8 @@ class PetView @JvmOverloads constructor(
 
     /** Notifies when on-device recording (foreground sync) starts/stops. */
     var onRecordingChanged: ((Boolean) -> Unit)? = null
+    /** Notifies when frame capture actually begins (WebView loaded, overlay should hide). */
+    var onCaptureStarted: (() -> Unit)? = null
 
     var state: ClawdState = ClawdState.IDLE
         set(value) {
@@ -94,7 +87,6 @@ class PetView @JvmOverloads constructor(
     init {
         addView(fallbackLabel, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         addView(imageView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-        addView(syncOverlay, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
     }
 
     private fun refresh() = showSvg(ThemeConfig.resolveSvg(state, activeSessionCount))
@@ -137,7 +129,6 @@ class PetView @JvmOverloads constructor(
         val (loopMs, count) = readMeta(framesDir)
         val intervalMs = if (loopMs > 0 && count > 0) (loopMs / count).coerceAtLeast(1L) else (1000L / FPS)
         fallbackLabel.visibility = GONE
-        syncOverlay.visibility = GONE
         imageView.visibility = VISIBLE
         player.play(imageView, bitmaps, intervalMs)
     }
@@ -152,18 +143,18 @@ class PetView @JvmOverloads constructor(
         player.stop()
         imageView.visibility = GONE
         fallbackLabel.visibility = GONE
-        syncOverlay.visibility = VISIBLE
-        onRecordingChanged?.invoke(true)
+onRecordingChanged?.invoke(true)
 
         val size = if (width > 0) width else FALLBACK_SIZE_PX
-        val rec = FrameRecorder(context.applicationContext, this, size, FPS)
+        val rec = FrameRecorder(context, this, size, FPS)
         recorder = rec
-        rec.record(svgText, framesDir) { frames ->
+        rec.record(svgText, framesDir, onCaptureStarted = {
+            post { onCaptureStarted?.invoke() }
+        }) { frames ->
             rec.shutdown()
             post {
                 if (recorder === rec) recorder = null
-                syncOverlay.visibility = GONE
-                onRecordingChanged?.invoke(false)
+                        onRecordingChanged?.invoke(false)
                 if (gen != generation) return@post
                 if (frames.isNotEmpty() && isComplete(framesDir)) playFrames(framesDir)
                 else showFallback()
@@ -174,7 +165,6 @@ class PetView @JvmOverloads constructor(
     private fun showFallback() {
         player.stop()
         imageView.visibility = GONE
-        syncOverlay.visibility = GONE
         fallbackLabel.visibility = VISIBLE
         fallbackLabel.text = state.name
     }

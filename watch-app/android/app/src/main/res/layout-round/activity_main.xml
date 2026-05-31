@@ -42,4 +42,21 @@
         android:gravity="center"
         android:visibility="gone" />
 
+    <FrameLayout
+        android:id="@+id/sync_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#CC000000"
+        android:visibility="gone">
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:gravity="center"
+            android:text="🎬 Preparing animation…\nPlease wait"
+            android:textSize="13sp"
+            android:textColor="#FFFFFF"
+            android:lineSpacingExtra="6dp" />
+    </FrameLayout>
+
 </FrameLayout>

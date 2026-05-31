@@ -25,6 +25,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var petView: PetView
     private lateinit var connectionIndicator: TextView
     private lateinit var stateChip: TextView
+    private lateinit var syncOverlay: android.view.View
 
     private var bleService: BleService? = null
     private var bound = false
@@ -63,6 +64,9 @@ class MainActivity : AppCompatActivity() {
             petView.onRecordingChanged = { recording ->
                 runOnUiThread { showRecording(recording) }
             }
+            petView.onCaptureStarted = {
+                runOnUiThread { onCaptureStarted() }
+            }
             val cached = service.getLastState()
             if (cached != null) {
                 runOnUiThread { handleCompactState(cached) }
@@ -91,6 +95,7 @@ class MainActivity : AppCompatActivity() {
         petView = findViewById(R.id.pet_view)
         connectionIndicator = findViewById(R.id.connection_indicator)
         stateChip = findViewById(R.id.state_chip)
+        syncOverlay = findViewById(R.id.sync_overlay)
 
         if (PairingStore.isPaired(this)) {
             demoMode = false
@@ -137,6 +142,7 @@ class MainActivity : AppCompatActivity() {
             bleService?.onThemeChanged = null
             bleService?.onThemeProgress = null
             petView.onRecordingChanged = null
+            petView.onCaptureStarted = null
             unbindService(connection)
             bound = false
         }
@@ -162,14 +168,26 @@ class MainActivity : AppCompatActivity() {
         connectionIndicator.setTextColor(0xFFFF9800.toInt())
     }
 
-    /** Foreground sync mode: the pet is being recorded for native playback. */
+    /**
+     * Recording lifecycle:
+     * 1. showRecording(true) → show overlay + hide UI chrome
+     * 2. onCaptureStarted() → WebView ready, hide overlay so PixelCopy gets clean frames
+     * 3. showRecording(false) → recording done, restore UI
+     */
     private fun showRecording(recording: Boolean) {
         if (recording) {
-            connectionIndicator.text = "🎬 Preparing pet…"
-            connectionIndicator.setTextColor(0xFFFF9800.toInt())
+            connectionIndicator.visibility = android.view.View.GONE
+            stateChip.visibility = android.view.View.GONE
+            syncOverlay.visibility = android.view.View.VISIBLE
         } else {
+            syncOverlay.visibility = android.view.View.GONE
+            connectionIndicator.visibility = android.view.View.VISIBLE
             updateConnectionState(bleConnected)
         }
+    }
+
+    private fun onCaptureStarted() {
+        syncOverlay.visibility = android.view.View.GONE
     }
 
     private fun updateStateChip(state: ClawdState) {
