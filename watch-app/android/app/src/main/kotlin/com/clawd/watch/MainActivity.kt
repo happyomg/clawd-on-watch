@@ -226,10 +226,12 @@ class MainActivity : AppCompatActivity() {
     private fun showRecording(recording: Boolean) {
         cancelSyncCompleteTimer()
         if (recording) {
-            stateChip.visibility = android.view.View.GONE
             connectionIndicator.visibility = android.view.View.VISIBLE
-            connectionIndicator.text = "🎬 Preparing…"
+            connectionIndicator.text = "🔄 Syncing theme…"
             connectionIndicator.setTextColor(0xFFFF9800.toInt())
+            stateChip.visibility = android.view.View.VISIBLE
+            stateChip.text = "Preparing…"
+            stateChip.setTextColor(0xAAFFFFFF.toInt())
         } else {
             updateConnectionState(bleConnected)
         }
@@ -237,9 +239,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun showRecordProgress(name: String, current: Int, total: Int) {
         connectionIndicator.visibility = android.view.View.VISIBLE
-        connectionIndicator.text = "🎬 $name ($current/$total)"
+        connectionIndicator.text = "🔄 Syncing theme"
         connectionIndicator.setTextColor(0xFFFF9800.toInt())
-        stateChip.visibility = android.view.View.GONE
+        stateChip.visibility = android.view.View.VISIBLE
+        stateChip.text = "🎬 $name ($current/$total)"
+        stateChip.setTextColor(0xAAFFFFFF.toInt())
     }
 
     @Suppress("UNUSED_PARAMETER")
