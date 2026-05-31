@@ -126,18 +126,26 @@
         btn.textContent = "Installing bleak...";
         window.settingsAPI.command("watch.installBleak").then((result) => {
           if (result && result.status === "ok") {
-            btn.textContent = "Connecting to watch...";
-            btn.style.borderColor = "#4ADE80";
-            // Clear stale error from runtime so panel rerenders as "Searching"
-            if (core.runtime) core.runtime.watchStatus = { started: true, connected: false, lastError: null };
-            core.ops.requestRender({ content: true });
+            btn.textContent = "Installed! Connecting...";
+            btn.style.cssText += "border-color:#4ADE80;background:#1a3a1a;";
+            core.ops.showToast("bleak installed — connecting to watch...", { error: false });
             window.settingsAPI.command("watch.restart");
+            // Delay the rerender so user sees the success state
+            setTimeout(function() {
+              if (core.runtime) core.runtime.watchStatus = { started: true, connected: false, lastError: null };
+              core.ops.requestRender({ content: true });
+            }, 2000);
           } else {
-            btn.textContent = "Failed: " + ((result && result.message) || "");
-            btn.style.borderColor = "#F87171";
+            btn.textContent = "Install failed";
+            btn.style.cssText += "border-color:#F87171;";
             btn.disabled = false;
+            core.ops.showToast("bleak install failed: " + ((result && result.message) || ""), { error: true });
           }
-        }).catch(() => { btn.textContent = "Error"; btn.disabled = false; });
+        }).catch(function(err) {
+          btn.textContent = "Install error";
+          btn.disabled = false;
+          core.ops.showToast("Install error: " + (err && err.message || ""), { error: true });
+        });
       });
       row.querySelector(".row-text").appendChild(btn);
     }
