@@ -157,7 +157,8 @@ function createWatchAdapter(options = {}) {
     if (!getFp || !getBundle) return;
     const desktopHash = getFp();
     if (!desktopHash) return;
-    if (watchThemeHash && desktopHash === watchThemeHash) return; // already in sync
+    if (!watchThemeHash) return; // wait for CWD4 read before comparing
+    if (desktopHash === watchThemeHash) return; // already in sync
     if (desktopHash === lastSyncedHash) return; // pushed; awaiting watch to finish
     let bundle;
     try { bundle = getBundle(); } catch (err) { log(`theme bundle failed: ${err.message || err}`); return; }
