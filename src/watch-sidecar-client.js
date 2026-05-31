@@ -124,6 +124,7 @@ class WatchSidecarClient {
   }
 
   connect(target) {
+    if (this._disconnectTimer) { clearTimeout(this._disconnectTimer); this._disconnectTimer = null; }
     const address = typeof target === "string" ? target : (target && target.address) || "";
     if (address) this._writeStdin({ type: "connect", address });
   }
