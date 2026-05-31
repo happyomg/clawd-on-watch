@@ -88,7 +88,9 @@ function createWatchAdapter(options = {}) {
   function handleIssue(err, { restart = false } = {}) {
     const issue = classifyWatchIssue(err);
     retryAttempt += 1;
-    const keepPrevious = lastError && lastError.category === "missing_bleak" && issue.category === "sidecar_exited";
+    const isSetupError = lastError && (lastError.category === "missing_bleak" || lastError.category === "python_missing");
+    const isFollowup = issue.category === "sidecar_exited" || issue.category === "disconnected";
+    const keepPrevious = isSetupError && isFollowup;
     if (!keepPrevious) {
       lastError = { code: issue.code, category: issue.category, message: issue.message, hint: issue.hint, retryable: issue.retryable, at: now() };
     }
