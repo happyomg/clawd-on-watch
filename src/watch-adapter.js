@@ -172,7 +172,9 @@ function createWatchAdapter(options = {}) {
       getSessionSnapshot: options.getSessionSnapshot || (() => ({ sessions: [] })),
       getCurrentState: options.getCurrentState || (() => "idle"),
       getCurrentSvg: options.getCurrentSvg || (() => null),
-      getPendingPermissions: options.getPendingPermissions || (() => []),
+      getPendingPermissions: () => activeConfig.permissionsEnabled
+        ? (typeof options.getPendingPermissions === "function" ? options.getPendingPermissions() : [])
+        : [],
       keepaliveMs: 10000,
       log: (message) => log(`controller: ${message}`),
     });
