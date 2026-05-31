@@ -218,35 +218,33 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Recording lifecycle:
-     * 1. showRecording(true) → overlay visible, hide UI chrome
-     * 2. showRecordProgress → update overlay with current state + N/total
-     * 3. onCaptureStarted → overlay hidden so PixelCopy gets clean frames
-     *    (user sees the live WebView animation being recorded)
-     * 4. Next state → overlay re-shown with updated progress
-     * 5. showRecording(false) → all done, restore UI
+     * Recording UX: progress is shown in the connectionIndicator pill (always
+     * visible, small footprint in PixelCopy frames). State chip is hidden.
+     * No full-screen overlay — user sees the live WebView animation below the
+     * progress indicator throughout recording.
      */
     private fun showRecording(recording: Boolean) {
         cancelSyncCompleteTimer()
         if (recording) {
-            connectionIndicator.visibility = android.view.View.GONE
             stateChip.visibility = android.view.View.GONE
-            syncLabel.text = "🎬 Preparing animations…"
-            syncOverlay.visibility = android.view.View.VISIBLE
-        } else {
-            syncOverlay.visibility = android.view.View.GONE
             connectionIndicator.visibility = android.view.View.VISIBLE
+            connectionIndicator.text = "🎬 Preparing…"
+            connectionIndicator.setTextColor(0xFFFF9800.toInt())
+        } else {
             updateConnectionState(bleConnected)
         }
     }
 
     private fun showRecordProgress(name: String, current: Int, total: Int) {
-        syncLabel.text = "🎬 Recording: $name\n$current / $total"
-        syncOverlay.visibility = android.view.View.VISIBLE
+        connectionIndicator.visibility = android.view.View.VISIBLE
+        connectionIndicator.text = "🎬 $name ($current/$total)"
+        connectionIndicator.setTextColor(0xFFFF9800.toInt())
+        stateChip.visibility = android.view.View.GONE
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private fun onCaptureStarted() {
-        syncOverlay.visibility = android.view.View.GONE
+        // No-op: progress stays visible in the indicator pill.
     }
 
     private fun cancelSyncCompleteTimer() {
