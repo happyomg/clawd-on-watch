@@ -2331,7 +2331,7 @@ unsubscribeHardwareBuddySettings = _settingsController.subscribeKey("hardwareBud
 // ── Watch adapter (independent from Hardware Buddy) ──
 
 const { createWatchAdapter } = require("./watch-adapter");
-const { computeThemeFingerprint } = require("./watch-theme-fingerprint");
+const { computeThemeFingerprint, collectSvgFiles } = require("./watch-theme-fingerprint");
 let watchAdapter = null;
 let watchStatus = null;
 let unsubscribeWatchSettings = null;
@@ -2358,6 +2358,28 @@ watchAdapter = createWatchAdapter({
       const theme = getActiveTheme();
       if (!theme) return null;
       return computeThemeFingerprint(themeRuntime.getActiveThemeId("clawd"), theme.states);
+    } catch (_) {
+      return null;
+    }
+  },
+  getThemeBundle: () => {
+    try {
+      const theme = getActiveTheme();
+      if (!theme || !theme.states) return null;
+      const id = themeRuntime.getActiveThemeId("clawd");
+      const files = collectSvgFiles(theme.states);
+      const fileData = {};
+      for (const file of files) {
+        const p = themeRuntime.getAssetPath(file);
+        if (p && fs.existsSync(p)) fileData[file] = fs.readFileSync(p);
+      }
+      return {
+        name: id,
+        hash: computeThemeFingerprint(id, theme.states),
+        stateMap: theme.states,
+        files,
+        fileData,
+      };
     } catch (_) {
       return null;
     }

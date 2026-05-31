@@ -5,6 +5,7 @@ const path = require("path");
 const { WatchSidecarClient } = require("./watch-sidecar-client");
 const { WatchController } = require("./watch-controller");
 const { normalizeWatchSettings } = require("./watch-settings");
+const { buildThemeFrames } = require("./watch-theme-transfer");
 
 function truthy(value) {
   if (value === true) return true;
@@ -62,6 +63,13 @@ function createWatchAdapter(options = {}) {
   let retryAttempt = 0;
   let restartTimer = null;
   let activeConfig = readConfig();
+
+  // Theme sync state (Layer 2/3): the watch's last-reported fingerprint, whether
+  // a transfer is in flight, and the hash we last pushed (so we don't re-push
+  // the same theme repeatedly while the watch records it).
+  let watchThemeHash = null;
+  let themeSyncing = false;
+  let lastSyncedHash = null;
 
   function readConfig() {
     const settings = typeof options.getSettings === "function" ? options.getSettings() : null;
@@ -122,6 +130,40 @@ function createWatchAdapter(options = {}) {
     }, delayMs);
   }
 
+  function isConnected() {
+    return !!(sidecar && sidecar.transport && sidecar.transport.connected);
+  }
+
+  // Compare the desktop's active-theme fingerprint against the watch's reported
+  // hash; on mismatch, stream the theme (manifest + raw SVGs) over CWD5. Guards
+  // against re-pushing a theme already in flight or already sent.
+  function maybeSyncTheme() {
+    if (!isConnected() || themeSyncing) return;
+    const getFp = typeof options.getThemeFingerprint === "function" ? options.getThemeFingerprint : null;
+    const getBundle = typeof options.getThemeBundle === "function" ? options.getThemeBundle : null;
+    if (!getFp || !getBundle) return;
+    const desktopHash = getFp();
+    if (!desktopHash) return;
+    if (watchThemeHash && desktopHash === watchThemeHash) return; // already in sync
+    if (desktopHash === lastSyncedHash) return; // pushed; awaiting watch to finish
+    let bundle;
+    try { bundle = getBundle(); } catch (err) { log(`theme bundle failed: ${err.message || err}`); return; }
+    if (!bundle || !bundle.fileData || !bundle.hash) return;
+    let frames;
+    try { frames = buildThemeFrames(bundle); } catch (err) { log(`theme framing failed: ${err.message || err}`); return; }
+    if (!frames.length) return;
+    themeSyncing = true;
+    lastSyncedHash = desktopHash;
+    log(`theme sync → watch: ${bundle.name} (${desktopHash}), ${frames.length} frames`);
+    try {
+      sidecar.sendThemeData(frames);
+    } catch (err) {
+      themeSyncing = false;
+      lastSyncedHash = null;
+      log(`theme send failed: ${err.message || err}`);
+    }
+  }
+
   function cleanup({ keepConfig = false } = {}) {
     if (restartTimer) { clearTimer(restartTimer); restartTimer = null; }
     if (!keepConfig) retryAttempt = 0;
@@ -157,7 +199,9 @@ function createWatchAdapter(options = {}) {
       },
       onStatus: (status) => {
         if (status && status.connected === true) retryAttempt = 0;
+        if (status && status.themeHash) watchThemeHash = status.themeHash;
         publishStatus();
+        maybeSyncTheme();
       },
       onDevices: () => publishStatus(),
       onError: (err) => handleIssue(err),
@@ -168,9 +212,22 @@ function createWatchAdapter(options = {}) {
           if (controller && typeof controller.resetDedup === "function") controller.resetDedup();
         } else if (state && state.previous && state.previous.connected === true) {
           handleIssue({ code: "DISCONNECTED", message: "transport disconnected" });
+          // A disconnect may have interrupted a transfer — allow a fresh push
+          // (and re-comparison via CWD4) on the next connection.
+          themeSyncing = false;
+          lastSyncedHash = null;
+          watchThemeHash = null;
         }
         publishStatus();
         if (controller && typeof controller.notifyStateChanged === "function") controller.notifyStateChanged();
+        maybeSyncTheme();
+      },
+      onThemeSynced: (msg) => {
+        themeSyncing = false;
+        if (msg && msg.hash) watchThemeHash = msg.hash;
+        log(`theme sync confirmed by bridge: ${msg && msg.hash} (${msg && msg.frames} frames)`);
+        // The desktop theme may have changed again during transfer — re-check.
+        maybeSyncTheme();
       },
       onApprovalResponse: (msg) => {
         if (!msg || !msg.requestId) return;
@@ -228,7 +285,9 @@ function createWatchAdapter(options = {}) {
 
   function notifyStateChanged() {
     if (!started || !controller || typeof controller.notifyStateChanged !== "function") return null;
-    return controller.notifyStateChanged();
+    const result = controller.notifyStateChanged();
+    maybeSyncTheme();
+    return result;
   }
 
   function notifyPermissionsChanged() {

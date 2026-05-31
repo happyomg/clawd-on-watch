@@ -127,6 +127,16 @@ class PetView @JvmOverloads constructor(
         showSvg(filename)
     }
 
+    /**
+     * The active theme changed (a CWD5 sync completed). Force a re-resolve so
+     * the current state renders under the new theme — frames resolve under the
+     * new theme hash, and any uncached state records lazily on display.
+     */
+    fun reloadForThemeChange() {
+        currentSvg = ""
+        refresh()
+    }
+
     private fun showSvg(svg: String) {
         if (svg == currentSvg) return
         currentSvg = svg

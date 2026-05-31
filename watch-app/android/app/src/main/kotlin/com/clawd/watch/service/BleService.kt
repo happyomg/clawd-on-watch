@@ -36,8 +36,10 @@ import com.clawd.watch.R
 import com.clawd.watch.data.ApprovalResponse
 import com.clawd.watch.data.WatchMessage
 import com.clawd.watch.domain.ThemeConfig
+import com.clawd.watch.domain.ThemeReceiver
 import com.clawd.watch.power.PowerManager
 import org.json.JSONObject
+import java.io.File
 import java.util.UUID
 
 /**
@@ -72,6 +74,7 @@ class BleService : Service() {
         val CHAR_APPROVAL_REQ: UUID = UUID.fromString("00000cd2-0000-1000-8000-00805f9b34fb")
         val CHAR_APPROVAL_RESP: UUID = UUID.fromString("00000cd3-0000-1000-8000-00805f9b34fb")
         val CHAR_META: UUID = UUID.fromString("00000cd4-0000-1000-8000-00805f9b34fb")
+        val CHAR_THEME: UUID = UUID.fromString("00000cd5-0000-1000-8000-00805f9b34fb")
         val CCCD: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
 
         fun start(context: Context) {
@@ -117,6 +120,10 @@ class BleService : Service() {
     var onWatchMessage: ((WatchMessage) -> Unit)? = null
     var onConnectionStateChanged: ((Boolean) -> Unit)? = null
     var onPowerModeChanged: ((PowerManager.PowerMode) -> Unit)? = null
+    /** Fired after a CWD5 theme transfer completes and becomes the active theme. */
+    var onThemeChanged: (() -> Unit)? = null
+
+    private val themeReceiver by lazy { ThemeReceiver(File(filesDir, "themes")) }
 
     @Volatile private var lastCompactState: WatchMessage.CompactState? = null
 
@@ -151,6 +158,7 @@ class BleService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        restoreActiveTheme()
         powerManager = PowerManager(this)
         powerManager.onModeChanged = { mode -> onPowerModeChanged?.invoke(mode) }
         powerManager.start()
@@ -225,6 +233,14 @@ class BleService : Service() {
             BluetoothGattCharacteristic.PERMISSION_READ
         )
         service.addCharacteristic(metaChar)
+
+        // CWD5: Theme Data — desktop writes manifest/chunk/done frames here
+        val themeChar = BluetoothGattCharacteristic(
+            CHAR_THEME,
+            BluetoothGattCharacteristic.PROPERTY_WRITE or BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE,
+            BluetoothGattCharacteristic.PERMISSION_WRITE
+        )
+        service.addCharacteristic(themeChar)
 
         gattServer!!.addService(service)
         Log.i(TAG, "GATT server started with service $SERVICE_UUID")
@@ -439,6 +455,7 @@ class BleService : Service() {
         when (uuid) {
             CHAR_STATE -> handleStateWrite(data)
             CHAR_APPROVAL_REQ -> handleApprovalRequestWrite(data)
+            CHAR_THEME -> handleThemeWrite(data)
             else -> Log.w(TAG, "Write to unknown characteristic: $uuid")
         }
     }
@@ -469,6 +486,37 @@ class BleService : Service() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Bad state payload: ${e.message}")
+        }
+    }
+
+    /** Restore the last synced theme from filesDir so it survives a restart. */
+    private fun restoreActiveTheme() {
+        try {
+            val hash = getSharedPreferences("clawd_state", Context.MODE_PRIVATE)
+                .getString("active_theme_hash", null) ?: return
+            val dir = File(File(filesDir, "themes"), hash)
+            ThemeConfig.loadFromDir(dir)?.let {
+                ThemeConfig.setActive(it)
+                Log.i(TAG, "restored synced theme ${it.name} ($hash)")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "restoreActiveTheme failed: ${e.message}")
+        }
+    }
+
+    private fun handleThemeWrite(data: ByteArray) {
+        val text = data.toString(Charsets.UTF_8)
+        try {
+            val manifest = themeReceiver.onFrame(JSONObject(text)) ?: return
+            // Transfer complete — activate the new theme, persist it so it
+            // survives restarts, and re-render.
+            ThemeConfig.setActive(manifest)
+            getSharedPreferences("clawd_state", Context.MODE_PRIVATE).edit()
+                .putString("active_theme_hash", manifest.hash)
+                .apply()
+            handler.post { onThemeChanged?.invoke() }
+        } catch (e: Exception) {
+            Log.e(TAG, "Bad theme frame: ${e.message}")
         }
     }
 

@@ -188,3 +188,95 @@ describe("watchApprovalId", () => {
     assert.strictEqual(id, "::0");
   });
 });
+
+describe("watch-adapter theme sync", () => {
+  function makeThemeSidecar() {
+    let opts = null;
+    const transport = { connected: false, secure: false, sent: [], send(p) { this.sent.push(p); } };
+    const themeSends = [];
+    const factory = (sidecarOptions) => {
+      opts = sidecarOptions;
+      return { transport, start() {}, stop() {}, sendThemeData: (frames) => themeSends.push(frames) };
+    };
+    return { factory, get opts() { return opts; }, transport, themeSends };
+  }
+
+  const bundle = {
+    name: "calico",
+    hash: "b7e2d4",
+    stateMap: { idle: ["calico-idle.svg"] },
+    files: ["calico-idle.svg"],
+    fileData: { "calico-idle.svg": Buffer.from("<svg/>", "utf8") },
+  };
+
+  it("pushes the theme over CWD5 when the watch hash differs", () => {
+    const fake = makeThemeSidecar();
+    const { adapterOpts } = baseDeps({
+      createSidecar: fake.factory,
+      getThemeFingerprint: () => "b7e2d4",
+      getThemeBundle: () => bundle,
+    });
+    live = createWatchAdapter(adapterOpts);
+    live.start();
+    fake.transport.connected = true;
+
+    fake.opts.onStatus({ connected: true, themeHash: "79c952" }); // watch on a different theme
+
+    assert.strictEqual(fake.themeSends.length, 1);
+    const frames = fake.themeSends[0];
+    assert.strictEqual(frames[0].t, "manifest");
+    assert.strictEqual(frames[frames.length - 1].t, "done");
+    assert.strictEqual(frames[frames.length - 1].hash, "b7e2d4");
+  });
+
+  it("does not push when the watch already matches", () => {
+    const fake = makeThemeSidecar();
+    const { adapterOpts } = baseDeps({
+      createSidecar: fake.factory,
+      getThemeFingerprint: () => "b7e2d4",
+      getThemeBundle: () => bundle,
+    });
+    live = createWatchAdapter(adapterOpts);
+    live.start();
+    fake.transport.connected = true;
+
+    fake.opts.onStatus({ connected: true, themeHash: "b7e2d4" });
+
+    assert.strictEqual(fake.themeSends.length, 0);
+  });
+
+  it("does not re-push the same theme while a transfer is in flight", () => {
+    const fake = makeThemeSidecar();
+    const { adapterOpts } = baseDeps({
+      createSidecar: fake.factory,
+      getThemeFingerprint: () => "b7e2d4",
+      getThemeBundle: () => bundle,
+    });
+    live = createWatchAdapter(adapterOpts);
+    live.start();
+    fake.transport.connected = true;
+
+    fake.opts.onStatus({ connected: true, themeHash: "79c952" });
+    fake.opts.onStatus({ connected: true, themeHash: "79c952" }); // duplicate status
+    assert.strictEqual(fake.themeSends.length, 1);
+
+    // Confirmation updates the watch hash → now in sync, no further push.
+    fake.opts.onThemeSynced({ hash: "b7e2d4", frames: fake.themeSends[0].length });
+    fake.opts.onStatus({ connected: true, themeHash: "b7e2d4" });
+    assert.strictEqual(fake.themeSends.length, 1);
+  });
+
+  it("does not push when no theme bundle is available", () => {
+    const fake = makeThemeSidecar();
+    const { adapterOpts } = baseDeps({
+      createSidecar: fake.factory,
+      getThemeFingerprint: () => "b7e2d4",
+      getThemeBundle: () => null,
+    });
+    live = createWatchAdapter(adapterOpts);
+    live.start();
+    fake.transport.connected = true;
+    fake.opts.onStatus({ connected: true, themeHash: "79c952" });
+    assert.strictEqual(fake.themeSends.length, 0);
+  });
+});

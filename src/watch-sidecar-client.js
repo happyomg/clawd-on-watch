@@ -20,6 +20,7 @@ class WatchSidecarClient {
     this.onError = options.onError || (() => {});
     this.onTransportStateChanged = options.onTransportStateChanged || (() => {});
     this.onApprovalResponse = options.onApprovalResponse || (() => {});
+    this.onThemeSynced = options.onThemeSynced || (() => {});
 
     this.proc = null;
     this.started = false;
@@ -103,6 +104,16 @@ class WatchSidecarClient {
     if (address) this._writeStdin({ type: "connect", address });
   }
 
+  /**
+   * Stream a theme to the watch via CWD5. `frames` is the ordered list from
+   * buildThemeFrames (manifest → chunks → done); the bridge writes each frame
+   * to the Theme Data characteristic in order.
+   */
+  sendThemeData(frames) {
+    if (!Array.isArray(frames) || frames.length === 0) return;
+    this._writeStdin({ type: "theme_sync", frames });
+  }
+
   scan() {
     this._writeStdin({ type: "scan" });
   }
@@ -137,6 +148,8 @@ class WatchSidecarClient {
       this.onDevices(msg.items || []);
     } else if (type === "approval_response") {
       this.onApprovalResponse(msg);
+    } else if (type === "theme_synced") {
+      this.onThemeSynced(msg);
     } else if (type === "error") {
       this.onError({ code: msg.code || "SIDECAR_ERROR", message: msg.message || "" });
     }

@@ -50,6 +50,12 @@ class MainActivity : AppCompatActivity() {
             service.onPowerModeChanged = { mode ->
                 runOnUiThread { handlePowerModeChange(mode) }
             }
+            service.onThemeChanged = {
+                runOnUiThread {
+                    themeSyncNeeded = false
+                    petView.reloadForThemeChange()
+                }
+            }
             val cached = service.getLastState()
             if (cached != null) {
                 runOnUiThread { handleCompactState(cached) }
@@ -66,8 +72,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val isDebug = (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
-        if (!PairingStore.isPaired(this) && !isDebug) {
+        if (!PairingStore.isPaired(this)) {
             startActivity(Intent(this, PairingActivity::class.java))
             finish()
             return
@@ -122,6 +127,7 @@ class MainActivity : AppCompatActivity() {
             bleService?.onWatchMessage = null
             bleService?.onConnectionStateChanged = null
             bleService?.onPowerModeChanged = null
+            bleService?.onThemeChanged = null
             unbindService(connection)
             bound = false
         }

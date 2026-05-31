@@ -41,6 +41,7 @@ CWD1_STATE = "00000cd1-0000-1000-8000-00805f9b34fb"
 CWD2_APPROVAL_REQ = "00000cd2-0000-1000-8000-00805f9b34fb"
 CWD3_APPROVAL_RESP = "00000cd3-0000-1000-8000-00805f9b34fb"
 CWD4_META = "00000cd4-0000-1000-8000-00805f9b34fb"
+CWD5_THEME = "00000cd5-0000-1000-8000-00805f9b34fb"
 
 RECONNECT_DELAYS = [2, 5, 10, 15, 30, 30, 30]
 
@@ -51,10 +52,12 @@ def emit(obj):
     sys.stdout.flush()
 
 
-def emit_status(connected, device_name=None):
+def emit_status(connected, device_name=None, theme_hash=None):
     msg = {"type": "status", "connected": connected}
     if device_name:
         msg["deviceName"] = device_name
+    if theme_hash:
+        msg["themeHash"] = theme_hash
     emit(msg)
 
 
@@ -201,13 +204,16 @@ async def run(args):
             meta_bytes = await c.read_gatt_char(CWD4_META)
             meta = json.loads(meta_bytes.decode("utf-8"))
             connected_name = meta.get("deviceName", address)
+            theme_hash = meta.get("themeHash")
 
             await c.start_notify(CWD3_APPROVAL_RESP, on_cwd3_notify)
 
             client = c
             last_address = address
             reconnect_attempt = 0
-            emit_status(True, connected_name)
+            # Surface the watch's active theme fingerprint so the controller can
+            # decide whether a theme sync (CWD5) is due.
+            emit_status(True, connected_name, theme_hash)
             if last_snapshot_data is not None:
                 try:
                     await c.write_gatt_char(CWD1_STATE, last_snapshot_data)
@@ -285,6 +291,27 @@ async def run(args):
                 except Exception as e:
                     emit_error("WRITE_FAILED", str(e))
                     await force_disconnect()
+
+        elif msg_type == "theme_sync":
+            frames = msg.get("frames", [])
+            if client and client.is_connected and isinstance(frames, list) and frames:
+                theme_hash = ""
+                for fr in frames:
+                    if isinstance(fr, dict) and fr.get("t") == "done":
+                        theme_hash = fr.get("hash", "")
+                ok = True
+                try:
+                    for fr in frames:
+                        payload = json.dumps(fr, ensure_ascii=False, separators=(",", ":"))
+                        # response=True paces the stream (each write is ack'd),
+                        # avoiding flooding the peripheral's write queue.
+                        await client.write_gatt_char(CWD5_THEME, payload.encode("utf-8"), response=True)
+                except Exception as e:
+                    ok = False
+                    emit_error("THEME_WRITE_FAILED", str(e))
+                    await force_disconnect()
+                if ok:
+                    emit({"type": "theme_synced", "hash": theme_hash, "frames": len(frames)})
 
         elif msg_type == "connect":
             addr = msg.get("address", "")
