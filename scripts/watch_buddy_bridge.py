@@ -294,6 +294,9 @@ async def run(args):
                     reconnect_task = None
                 reconnect_attempt = 0
                 await connect_to(addr)
+                if not client or not client.is_connected:
+                    if not stopping:
+                        await schedule_reconnect()
 
         elif msg_type == "scan":
             if reconnect_task:

@@ -121,6 +121,10 @@ class ApprovalActivity : AppCompatActivity() {
 
     override fun onStop() {
         flickDetector?.stop()
+        if (!responded) {
+            handler.removeCallbacksAndMessages(null)
+            respond("deny", "screen-off")
+        }
         if (bound) {
             unbindService(connection)
             bound = false

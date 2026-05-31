@@ -30,7 +30,7 @@ sealed class WatchMessage {
             if (json.has("s")) {
                 return CompactState(
                     state = json.getString("s"),
-                    svg = json.optString("svg", null),
+                    svg = if (json.isNull("svg")) null else json.optString("svg", null),
                     activeCount = json.optInt("n", 0)
                 )
             }

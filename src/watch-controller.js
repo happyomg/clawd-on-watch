@@ -9,7 +9,6 @@ class WatchController {
     this.getPendingPermissions = options.getPendingPermissions || (() => []);
     this.buildApprovalId = options.buildApprovalId || ((p) => p.requestId || p.id || "");
     this.getDoNotDisturb = options.getDoNotDisturb || (() => false);
-    this.resolvePermissionEntry = options.resolvePermissionEntry || null;
     this.keepaliveMs = options.keepaliveMs || 10000;
     this.log = options.log || (() => {});
 

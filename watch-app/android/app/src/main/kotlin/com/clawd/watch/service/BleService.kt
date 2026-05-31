@@ -50,6 +50,13 @@ import java.util.UUID
  *   Desktop (Central) writes CWD2 → watch receives approval request
  *   Watch updates CWD3 → desktop reads (or watch notifies) approval response
  *   Desktop (Central) reads CWD4 → watch serves connection meta
+ *
+ * Security trust boundary: GATT characteristics use PERMISSION_READ/WRITE
+ * (not *_ENCRYPTED). Any nearby BLE Central can connect. This is acceptable
+ * for a personal-use, short-range (~10m) desktop companion — the watch only
+ * renders state and relays approval decisions (desktop validates via
+ * watchApprovalId matching). Future hardening: PERMISSION_*_ENCRYPTED +
+ * bonded-device-only check in onConnectionStateChange.
  */
 class BleService : Service() {
 
@@ -280,8 +287,11 @@ class BleService : Service() {
         }
 
         override fun onExecuteWrite(device: BluetoothDevice, requestId: Int, execute: Boolean) {
-            val entries = synchronized(preparedWriteBuffer) { preparedWriteBuffer.toMap() }
-            synchronized(preparedWriteBuffer) { preparedWriteBuffer.clear() }
+            val entries = synchronized(preparedWriteBuffer) {
+                val copy = preparedWriteBuffer.toMap()
+                preparedWriteBuffer.clear()
+                copy
+            }
             if (execute) {
                 for ((handle, data) in entries) {
                     val uuid = findCharUuidByHandle(handle)
