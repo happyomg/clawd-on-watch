@@ -129,4 +129,15 @@ describe("WatchSidecarClient", () => {
     client._handleLine("   ");
     assert.strictEqual(client.transport.connected, false);
   });
+
+  it("should set _stopping flag on stop to suppress stale exit events", () => {
+    const client = new WatchSidecarClient({ command: "echo" });
+    assert.strictEqual(client._stopping, false);
+    // Simulate having a running process
+    client.proc = { stdin: { write: () => {}, destroyed: false }, kill: () => {} };
+    client.started = true;
+    client.stop();
+    assert.strictEqual(client._stopping, true, "stop should set _stopping before kill");
+    assert.strictEqual(client.started, false);
+  });
 });

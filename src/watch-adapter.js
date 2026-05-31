@@ -144,7 +144,7 @@ function createWatchAdapter(options = {}) {
     if (activeConfig.namePrefix) args.push("--name-prefix", activeConfig.namePrefix);
     if (activeConfig.address) args.push("--address", activeConfig.address);
 
-    sidecar = new WatchSidecarClient({
+    const sidecarOptions = {
       command: python,
       args,
       spawnOptions: { env: { ...process.env, PYTHONIOENCODING: "utf-8:replace" } },
@@ -185,7 +185,10 @@ function createWatchAdapter(options = {}) {
           try { resolve(match, decision); } catch (_) {}
         }
       },
-    });
+    };
+    sidecar = typeof options.createSidecar === "function"
+      ? options.createSidecar(sidecarOptions)
+      : new WatchSidecarClient(sidecarOptions);
 
     controller = new WatchController({
       transport: sidecar.transport,
@@ -245,4 +248,4 @@ function createWatchAdapter(options = {}) {
   };
 }
 
-module.exports = { createWatchAdapter, classifyWatchIssue };
+module.exports = { createWatchAdapter, classifyWatchIssue, watchApprovalId };

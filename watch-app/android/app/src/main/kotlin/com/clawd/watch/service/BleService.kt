@@ -85,6 +85,7 @@ class BleService : Service() {
     @Volatile private var advertiser: BluetoothLeAdvertiser? = null
     @Volatile private var connectedDevice: BluetoothDevice? = null
     @Volatile private var isAdvertising = false
+    @Volatile private var advertiseRequested = false
 
     private fun hasBlePermission(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -369,7 +370,7 @@ class BleService : Service() {
     @SuppressLint("MissingPermission")
     @Synchronized
     private fun startAdvertising() {
-        if (isAdvertising) return
+        if (isAdvertising || advertiseRequested) return
         if (!hasBlePermission()) {
             Log.e(TAG, "BLE permissions revoked — cannot start advertising")
             return
@@ -392,15 +393,17 @@ class BleService : Service() {
             .addServiceUuid(ParcelUuid(SERVICE_UUID))
             .build()
 
+        advertiseRequested = true
         advertiser?.startAdvertising(settings, data, advertiseCallback)
     }
 
     @SuppressLint("MissingPermission")
     @Synchronized
     private fun stopAdvertising() {
-        if (!isAdvertising) return
+        if (!isAdvertising && !advertiseRequested) return
         advertiser?.stopAdvertising(advertiseCallback)
         isAdvertising = false
+        advertiseRequested = false
     }
 
     private val advertiseCallback = object : AdvertiseCallback() {
@@ -412,6 +415,7 @@ class BleService : Service() {
 
         override fun onStartFailure(errorCode: Int) {
             isAdvertising = false
+            advertiseRequested = false
             Log.e(TAG, "Advertising failed: $errorCode")
             handler.post { updateNotification("Advertising failed ($errorCode)") }
         }
