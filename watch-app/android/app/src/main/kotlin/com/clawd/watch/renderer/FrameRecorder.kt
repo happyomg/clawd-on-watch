@@ -11,35 +11,42 @@ import android.view.View
 import android.view.ViewGroup
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
+import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.Executors
 
 /**
- * Records one animation loop of a CSS-animated SVG into a sequence of bitmap
- * frames, so the steady-state renderer can play them with a plain ImageView
- * instead of a permanently-resident WebView.
+ * Records one animation loop of a CSS-animated SVG into a frame sequence so the
+ * steady-state renderer can play it with a plain ImageView instead of a
+ * permanently-resident WebView.
  *
- * The WebView lives only for the duration of one recording: it is attached to
- * [parent] (CSS animation timelines only advance while attached), sized to the
- * target resolution, kept visually invisible, and destroyed when done. A
- * software layer is used so [View.draw] captures the exact on-screen pixels of
- * the current animation frame regardless of hardware-layer compositing.
+ * "Foreground sync mode": the recording WebView is added to [parent] *visibly*
+ * and on top, so the user watches the real animation while it is captured (this
+ * is the expected sync UX and guarantees the CSS timeline keeps advancing — an
+ * off-screen WebView can be throttled/paused). A software layer is used so
+ * [View.draw] captures the exact current frame. The WebView is destroyed when
+ * recording finishes.
+ *
+ * Loop alignment: the JS harness reports the longest finite animation cycle;
+ * we capture exactly that many frames at [fps] and persist (loopMs, count) in
+ * meta.json so playback can space frames as loopMs/count — a seamless loop even
+ * when the cycle isn't a clean multiple of the frame interval.
  *
  * Frames are captured on the main thread (WebView is single-threaded) and
- * WebP-compressed on a worker thread. The whole job is best-effort: any failure
- * yields an empty result and the caller falls back to live WebView rendering.
+ * WebP-compressed on a worker. Best-effort: any failure yields an empty result
+ * and the caller falls back to live rendering.
  */
 class FrameRecorder(
     private val context: Context,
     private val parent: ViewGroup,
     private val sizePx: Int = 192,
-    private val fps: Int = 10
+    private val fps: Int = 20
 ) {
     companion object {
         private const val TAG = "FrameRecorder"
-        private const val MIN_FRAMES = 8
-        private const val MAX_FRAMES = 60          // 6s at 10fps — caps cache size
-        private const val DEFAULT_LOOP_MS = 2500L
+        private const val MIN_FRAMES = 12
+        private const val MAX_FRAMES = 100        // 5s at 20fps — caps cache/memory
+        private const val DEFAULT_LOOP_MS = 2000L
         private const val READY_TIMEOUT_MS = 8000L
         private const val WEBP_QUALITY = 90
     }
@@ -74,19 +81,22 @@ class FrameRecorder(
         }
 
         webView.apply {
-            layoutParams = ViewGroup.LayoutParams(sizePx, sizePx)
+            layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             setBackgroundColor(0x00000000)
-            alpha = 0f                              // invisible but still animating
+            // Software layer: visible foreground render AND drawable to a Bitmap.
             setLayerType(View.LAYER_TYPE_SOFTWARE, null)
             settings.javaScriptEnabled = true
             settings.allowFileAccess = false
             isVerticalScrollBarEnabled = false
             isHorizontalScrollBarEnabled = false
-            addJavascriptInterface(Bridge { loopMs -> onReady(this, loopMs, frameIntervalMs, outputDir, ::finish) }, "AndroidRec")
+            addJavascriptInterface(
+                Bridge { loopMs -> onReady(this, loopMs, frameIntervalMs, outputDir, ::finish) },
+                "AndroidRec"
+            )
         }
 
         try {
-            parent.addView(webView)
+            parent.addView(webView) // on top + visible — foreground recording
         } catch (e: Exception) {
             Log.w(TAG, "attach failed: ${e.message}")
             finish(emptyList())
@@ -94,8 +104,6 @@ class FrameRecorder(
         }
 
         webView.loadDataWithBaseURL("file:///android_asset/", buildHarness(svgText), "text/html", "utf-8", null)
-
-        // Safety net — if onReady never fires, abort.
         main.postDelayed({ if (!finished) { Log.w(TAG, "ready timeout"); finish(emptyList()) } }, READY_TIMEOUT_MS)
     }
 
@@ -109,16 +117,20 @@ class FrameRecorder(
         if (finished) return
         val effectiveLoop = if (loopMs <= 0) DEFAULT_LOOP_MS else loopMs
         val frameCount = ((effectiveLoop / frameIntervalMs).toInt()).coerceIn(MIN_FRAMES, MAX_FRAMES)
+        // Real cycle covered by the frames we actually capture — used for
+        // seamless playback spacing.
+        val coveredLoopMs = frameCount * frameIntervalMs
         outputDir.mkdirs()
-        val written = ArrayList<File>(frameCount)
+        val written = arrayOfNulls<File>(frameCount)
         var index = 0
 
         val capture = object : Runnable {
             override fun run() {
                 if (finished) return
                 if (index >= frameCount) {
-                    // Compression is async; ensure all queued work flushes before reporting.
-                    io.execute { finish(written.toList()) }
+                    writeMeta(outputDir, coveredLoopMs, frameCount)
+                    // Flush compression queue before reporting the files.
+                    io.execute { finish(written.filterNotNull()) }
                     return
                 }
                 val bmp = try {
@@ -139,7 +151,7 @@ class FrameRecorder(
                                 @Suppress("DEPRECATION")
                                 bmp.compress(Bitmap.CompressFormat.WEBP, WEBP_QUALITY, os)
                             }
-                            synchronized(written) { written.add(out) }
+                            written[i] = out
                         } catch (e: Exception) {
                             Log.w(TAG, "compress failed @${i}: ${e.message}")
                         } finally {
@@ -153,6 +165,15 @@ class FrameRecorder(
         main.post(capture)
     }
 
+    private fun writeMeta(dir: File, loopMs: Long, count: Int) {
+        try {
+            val meta = JSONObject().put("loopMs", loopMs).put("count", count).put("fps", fps)
+            File(dir, "meta.json").writeText(meta.toString(), Charsets.UTF_8)
+        } catch (e: Exception) {
+            Log.w(TAG, "meta write failed: ${e.message}")
+        }
+    }
+
     /** JS → Kotlin: reports the SVG's loop duration in ms once layout settles. */
     private class Bridge(val onReady: (Long) -> Unit) {
         @JavascriptInterface
@@ -162,10 +183,6 @@ class FrameRecorder(
     }
 
     private fun buildHarness(svgText: String): String {
-        // Inline the SVG (same-document → getComputedStyle works, no cross-origin
-        // <object> access). Compute the longest finite animation cycle; infinite
-        // iterations contribute their single-cycle duration.
-        val escaped = svgText // injected as raw markup inside the container
         return """
 <!DOCTYPE html><html><head><meta charset="utf-8">
 <style>
@@ -174,7 +191,7 @@ html,body{width:100%;height:100%;background:transparent;overflow:hidden}
 #c{width:100%;height:100%;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
 #c svg{width:160%;height:160%;position:absolute;left:-30%;top:-65%}
 </style></head>
-<body><div id="c">$escaped</div>
+<body><div id="c">$svgText</div>
 <script>
 (function(){
   function parseSec(v){ if(!v) return 0; var t=0; v.split(',').forEach(function(p){ p=p.trim(); var m=p.match(/([0-9.]+)(ms|s)?/); if(m){ var n=parseFloat(m[1]); if(m[2]==='ms') n=n/1000; if(n>t) t=n; } }); return t; }
@@ -190,7 +207,6 @@ html,body{width:100%;height:100%;background:transparent;overflow:hidden}
     return Math.round(max*1000);
   }
   function go(){ try{ AndroidRec.ready(loopMs()); }catch(e){ try{AndroidRec.ready(0);}catch(_){} } }
-  // Let layout + first animation tick settle before measuring.
   setTimeout(go, 250);
 })();
 </script></body></html>

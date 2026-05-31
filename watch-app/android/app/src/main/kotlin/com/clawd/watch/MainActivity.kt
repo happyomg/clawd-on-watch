@@ -60,6 +60,9 @@ class MainActivity : AppCompatActivity() {
             service.onThemeProgress = { p ->
                 runOnUiThread { showSyncProgress(p) }
             }
+            petView.onRecordingChanged = { recording ->
+                runOnUiThread { showRecording(recording) }
+            }
             val cached = service.getLastState()
             if (cached != null) {
                 runOnUiThread { handleCompactState(cached) }
@@ -133,6 +136,7 @@ class MainActivity : AppCompatActivity() {
             bleService?.onPowerModeChanged = null
             bleService?.onThemeChanged = null
             bleService?.onThemeProgress = null
+            petView.onRecordingChanged = null
             unbindService(connection)
             bound = false
         }
@@ -156,6 +160,16 @@ class MainActivity : AppCompatActivity() {
         }
         connectionIndicator.text = "🔄 Syncing ${(fraction * 100).toInt()}%"
         connectionIndicator.setTextColor(0xFFFF9800.toInt())
+    }
+
+    /** Foreground sync mode: the pet is being recorded for native playback. */
+    private fun showRecording(recording: Boolean) {
+        if (recording) {
+            connectionIndicator.text = "🎬 Preparing pet…"
+            connectionIndicator.setTextColor(0xFFFF9800.toInt())
+        } else {
+            updateConnectionState(bleConnected)
+        }
     }
 
     private fun updateStateChip(state: ClawdState) {

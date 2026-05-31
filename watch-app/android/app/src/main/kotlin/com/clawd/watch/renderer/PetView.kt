@@ -9,27 +9,27 @@ import android.util.AttributeSet
 import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
-import android.webkit.WebSettings
-import android.webkit.WebView
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
 import com.clawd.watch.domain.ClawdState
 import com.clawd.watch.domain.ThemeConfig
+import org.json.JSONObject
 import java.io.File
 
 /**
  * Steady-state pet renderer. Plays a cached frame sequence with a plain
- * [ImageView] (native bitmap blitting, ~7 MB, no compositor) — the WebView is
- * used only as a transient live fallback while a state's frames are being
- * recorded for the first time, then it goes idle.
+ * [ImageView] — no resident WebView. When a state has no cached frames yet it
+ * enters "foreground sync mode": [FrameRecorder] attaches a *visible* WebView
+ * on top, the user watches the real animation while it is captured, then it is
+ * destroyed and playback switches to the ImageView. So a WebView exists only
+ * during the brief one-time recording of each state.
  *
- * View stack: ImageView (front) over WebView (back). When cached frames exist
- * the ImageView plays them and the WebView is paused; otherwise the WebView
- * renders live while [FrameRecorder] captures the loop in the background.
+ * Playback loop is spaced as loopMs/count (from the recorder's meta.json) for a
+ * seamless cycle. Frames are recorded at 20fps.
  *
- * Drop-in replacement for the old SvgPetView API (`state`, `activeSessionCount`,
- * `setSvgImmediate`, `pause`, `resume`).
+ * Drop-in API parity with the old view: `state`, `activeSessionCount`,
+ * `setSvgImmediate`, `reloadForThemeChange`, `pause`, `resume`.
  */
 class PetView @JvmOverloads constructor(
     context: Context,
@@ -39,20 +39,29 @@ class PetView @JvmOverloads constructor(
 
     companion object {
         private const val TAG = "PetView"
-        private const val FPS = 10
+        private const val FPS = 20
         private const val FRAME_SIZE_PX = 192
     }
 
-    private var imageView: ImageView? = null
-    private var webView: WebView? = null
-    private var fallbackLabel: TextView? = null
-    private var webViewLoaded = false
-    private val webViewAvailable: Boolean
+    private val imageView = ImageView(context).apply {
+        scaleType = ImageView.ScaleType.FIT_CENTER
+        visibility = GONE
+    }
+    private val fallbackLabel = TextView(context).apply {
+        setTextColor(Color.WHITE)
+        textSize = 14f
+        gravity = Gravity.CENTER
+        text = "…"
+    }
 
     private val player = FramePlayer()
     private var currentSvg: String = ""
     /** Bumped on every showSvg so stale recorder callbacks are ignored. */
     private var generation = 0
+    private var recorder: FrameRecorder? = null
+
+    /** Notifies when on-device recording (foreground sync) starts/stops. */
+    var onRecordingChanged: ((Boolean) -> Unit)? = null
 
     var state: ClawdState = ClawdState.IDLE
         set(value) {
@@ -69,63 +78,14 @@ class PetView @JvmOverloads constructor(
         }
 
     init {
-        imageView = ImageView(context).apply {
-            scaleType = ImageView.ScaleType.FIT_CENTER
-            visibility = GONE
-        }
+        addView(fallbackLabel, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         addView(imageView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-
-        webViewAvailable = try {
-            val wv = WebView(context).apply {
-                setBackgroundColor(0x00000000)
-                settings.apply {
-                    javaScriptEnabled = true
-                    useWideViewPort = true
-                    loadWithOverviewMode = true
-                    setSupportZoom(false)
-                    allowFileAccess = false
-                    cacheMode = WebSettings.LOAD_NO_CACHE
-                }
-                setLayerType(LAYER_TYPE_HARDWARE, null)
-                isVerticalScrollBarEnabled = false
-                isHorizontalScrollBarEnabled = false
-                webViewClient = object : android.webkit.WebViewClient() {
-                    override fun onPageFinished(view: WebView?, url: String?) {
-                        webViewLoaded = true
-                        refresh()
-                    }
-                }
-            }
-            webView = wv
-            // Behind the ImageView.
-            addView(wv, 0, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-            wv.loadUrl("file:///android_asset/pet_renderer.html")
-            true
-        } catch (e: Exception) {
-            Log.w(TAG, "WebView not available, using fallback: ${e.message}")
-            val label = TextView(context).apply {
-                setTextColor(Color.WHITE)
-                textSize = 14f
-                gravity = Gravity.CENTER
-                text = "IDLE"
-            }
-            fallbackLabel = label
-            addView(label, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-            webViewLoaded = true
-            false
-        }
     }
 
-    /** Re-resolve the SVG for the current state/count and (re)display it. */
-    private fun refresh() {
-        val svg = ThemeConfig.resolveSvg(state, activeSessionCount)
-        showSvg(svg)
-    }
+    private fun refresh() = showSvg(ThemeConfig.resolveSvg(state, activeSessionCount))
 
-    /** Public API parity with the old view — show a specific file immediately. */
-    fun setSvgImmediate(filename: String) {
-        showSvg(filename)
-    }
+    /** Public API parity — show a specific file immediately. */
+    fun setSvgImmediate(filename: String) = showSvg(filename)
 
     /**
      * The active theme changed (a CWD5 sync completed). Force a re-resolve so
@@ -142,69 +102,85 @@ class PetView @JvmOverloads constructor(
         currentSvg = svg
         val gen = ++generation
 
-        if (!webViewAvailable) {
-            fallbackLabel?.text = "${state.name}\n$svg"
-            return
-        }
-
         val theme = ThemeConfig.active
         val framesDir = frameCacheDir(theme.hash, svg)
-        val cached = listFrames(framesDir)
-        if (cached.isNotEmpty()) {
-            playFrames(cached)
+        if (isComplete(framesDir)) {
+            playFrames(framesDir)
             return
         }
-
-        // No cache yet → render live in the WebView while we record.
-        showWebViewLive(svg)
-        recordInBackground(theme, svg, framesDir, gen)
+        // No cache → foreground-record this state, then switch to playback.
+        recordInForeground(theme, svg, framesDir, gen)
     }
 
-    private fun showWebViewLive(svg: String) {
-        player.stop()
-        imageView?.visibility = GONE
-        webView?.visibility = VISIBLE
-        if (webViewLoaded) {
-            webView?.evaluateJavascript("setSvgImmediate('${escapeJs(svg)}')", null)
-        }
-    }
-
-    private fun playFrames(frames: List<File>) {
+    private fun playFrames(framesDir: File) {
+        val frames = listFrames(framesDir)
         val bitmaps = decodeFrames(frames)
-        if (bitmaps.isEmpty()) return
-        val iv = imageView ?: return
-        webView?.visibility = GONE
-        iv.visibility = VISIBLE
-        player.play(iv, bitmaps, FPS)
-    }
-
-    private fun recordInBackground(theme: com.clawd.watch.domain.ThemeManifest, svg: String, framesDir: File, gen: Int) {
-        val svgText = readSvgSource(theme, svg) ?: run {
-            Log.w(TAG, "svg source missing for $svg")
+        if (bitmaps.isEmpty()) {
+            showFallback()
             return
         }
-        val recorder = FrameRecorder(context.applicationContext, this, FRAME_SIZE_PX, FPS)
-        recorder.record(svgText, framesDir) { frames ->
-            recorder.shutdown()
+        val (loopMs, count) = readMeta(framesDir)
+        val intervalMs = if (loopMs > 0 && count > 0) (loopMs / count).coerceAtLeast(1L) else (1000L / FPS)
+        fallbackLabel.visibility = GONE
+        imageView.visibility = VISIBLE
+        player.play(imageView, bitmaps, intervalMs)
+    }
+
+    private fun recordInForeground(theme: com.clawd.watch.domain.ThemeManifest, svg: String, framesDir: File, gen: Int) {
+        val svgText = readSvgSource(theme, svg)
+        if (svgText == null) {
+            Log.w(TAG, "svg source missing for $svg")
+            showFallback()
+            return
+        }
+        player.stop()
+        imageView.visibility = GONE
+        fallbackLabel.visibility = VISIBLE // shown until the recording WebView paints
+        onRecordingChanged?.invoke(true)
+
+        val rec = FrameRecorder(context.applicationContext, this, FRAME_SIZE_PX, FPS)
+        recorder = rec
+        rec.record(svgText, framesDir) { frames ->
+            rec.shutdown()
             post {
-                // Ignore if the displayed state changed while we were recording.
-                if (gen != generation) return@post
-                if (frames.isNotEmpty()) playFrames(frames)
+                if (recorder === rec) recorder = null
+                onRecordingChanged?.invoke(false)
+                if (gen != generation) return@post // state changed mid-record
+                if (frames.isNotEmpty() && isComplete(framesDir)) playFrames(framesDir)
+                else showFallback()
             }
         }
     }
 
+    private fun showFallback() {
+        player.stop()
+        imageView.visibility = GONE
+        fallbackLabel.visibility = VISIBLE
+        fallbackLabel.text = state.name
+    }
+
     // ── Sources & cache paths ──
 
-    private fun frameCacheDir(hash: String, svg: String): File {
-        val base = svg.substringBeforeLast('.')
-        return File(context.filesDir, "themes/$hash/frames/$base")
-    }
+    private fun frameCacheDir(hash: String, svg: String): File =
+        File(context.filesDir, "themes/$hash/frames/${svg.substringBeforeLast('.')}")
+
+    /** A dir is a complete recording once meta.json exists (written last). */
+    private fun isComplete(dir: File): Boolean =
+        File(dir, "meta.json").isFile && listFrames(dir).isNotEmpty()
 
     private fun listFrames(dir: File): List<File> {
         if (!dir.isDirectory) return emptyList()
         return dir.listFiles { f -> f.isFile && f.name.endsWith(".webp") }
             ?.sortedBy { it.name } ?: emptyList()
+    }
+
+    private fun readMeta(dir: File): Pair<Long, Int> {
+        return try {
+            val j = JSONObject(File(dir, "meta.json").readText(Charsets.UTF_8))
+            j.optLong("loopMs", 0) to j.optInt("count", 0)
+        } catch (e: Exception) {
+            0L to 0
+        }
     }
 
     private fun decodeFrames(frames: List<File>): List<Bitmap> {
@@ -233,20 +209,11 @@ class PetView @JvmOverloads constructor(
         }
     }
 
-    private fun escapeJs(s: String): String =
-        s.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "\\r")
-
     // ── Lifecycle ──
 
-    fun pause() {
-        player.pause()
-        webView?.onPause()
-    }
+    fun pause() = player.pause()
 
-    fun resume() {
-        player.resume()
-        webView?.onResume()
-    }
+    fun resume() = player.resume()
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onInterceptTouchEvent(ev: MotionEvent?): Boolean {
@@ -256,20 +223,19 @@ class PetView @JvmOverloads constructor(
 
     override fun onDetachedFromWindow() {
         player.stop()
-        webView?.destroy()
-        webView = null
         super.onDetachedFromWindow()
     }
 
     /**
-     * Cycles a list of pre-decoded bitmaps on an ImageView at a fixed fps using
-     * the view's own message loop. One sequence in memory at a time.
+     * Cycles pre-decoded bitmaps on an ImageView using the view's message loop.
+     * Frame interval comes from the recorded cycle (loopMs/count) for a seamless
+     * loop. One sequence in memory at a time.
      */
     private class FramePlayer {
         private var frames: List<Bitmap> = emptyList()
         private var target: ImageView? = null
         private var index = 0
-        private var intervalMs = 100L
+        private var intervalMs = 50L
         private var running = false
         private val handler = android.os.Handler(android.os.Looper.getMainLooper())
 
@@ -283,14 +249,14 @@ class PetView @JvmOverloads constructor(
             }
         }
 
-        fun play(view: ImageView, bitmaps: List<Bitmap>, fps: Int) {
+        fun play(view: ImageView, bitmaps: List<Bitmap>, frameIntervalMs: Long) {
             stop()
             frames = bitmaps
             target = view
             index = 0
-            intervalMs = (1000L / fps).coerceAtLeast(1L)
+            intervalMs = frameIntervalMs.coerceAtLeast(1L)
             if (frames.size == 1) {
-                view.setImageBitmap(frames[0]) // static, no loop needed
+                view.setImageBitmap(frames[0])
                 return
             }
             running = true
