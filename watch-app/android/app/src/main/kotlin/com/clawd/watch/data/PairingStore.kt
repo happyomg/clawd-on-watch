@@ -18,6 +18,10 @@ object PairingStore {
         context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
             .getString(KEY_ADDRESS, null) != null
 
+    fun getDeviceAddress(context: Context): String? =
+        context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_ADDRESS, null)
+
     fun clear(context: Context) {
         context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE).edit().clear().apply()
     }

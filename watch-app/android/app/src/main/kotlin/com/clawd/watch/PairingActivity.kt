@@ -35,7 +35,10 @@ class PairingActivity : AppCompatActivity() {
     private var bound = false
 
     private fun savePairingAndProceed() {
-        PairingStore.save(this, "peripheral-mode", "Clawd Watch")
+        val addr = bleService?.getConnectedDeviceAddress() ?: "peripheral-mode"
+        val name = bleService?.getConnectedDeviceName() ?: "Desktop"
+        PairingStore.save(this, addr, name)
+        Log.i(TAG, "Paired with $name ($addr)")
         startMainAndFinish()
     }
 

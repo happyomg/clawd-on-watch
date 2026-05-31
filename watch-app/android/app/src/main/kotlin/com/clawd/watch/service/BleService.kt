@@ -37,6 +37,7 @@ import com.clawd.watch.data.ApprovalResponse
 import com.clawd.watch.data.WatchMessage
 import com.clawd.watch.domain.ThemeCache
 import com.clawd.watch.domain.ThemeConfig
+import com.clawd.watch.data.PairingStore
 import com.clawd.watch.domain.ThemeReceiver
 import com.clawd.watch.power.PowerManager
 import org.json.JSONObject
@@ -151,6 +152,9 @@ class BleService : Service() {
     }
 
     fun isConnected(): Boolean = connectedDevice != null
+    fun getConnectedDeviceAddress(): String? = connectedDevice?.address
+    @SuppressLint("MissingPermission")
+    fun getConnectedDeviceName(): String? = connectedDevice?.name
 
     inner class LocalBinder : Binder() {
         fun getService(): BleService = this@BleService
@@ -254,15 +258,18 @@ class BleService : Service() {
         override fun onConnectionStateChange(device: BluetoothDevice, status: Int, newState: Int) {
             when (newState) {
                 BluetoothProfile.STATE_CONNECTED -> {
+                    val pairedAddr = PairingStore.getDeviceAddress(this@BleService)
+                    if (pairedAddr != null && pairedAddr != "peripheral-mode" && pairedAddr != device.address) {
+                        Log.w(TAG, "Rejecting unknown Central: ${device.address} (paired=$pairedAddr)")
+                        gattServer?.cancelConnection(device)
+                        return
+                    }
                     Log.i(TAG, "Central connected: ${device.address}")
                     connectedDevice = device
                     handler.post {
                         onConnectionStateChanged?.invoke(true)
                         updateNotification("Connected to ${device.name ?: device.address}")
                     }
-                    // Don't stop advertising yet — wait until we receive
-                    // a CWD write to confirm this is a real GATT client,
-                    // not just a system-level BLE connection.
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
                     Log.i(TAG, "Central disconnected: ${device.address}")
