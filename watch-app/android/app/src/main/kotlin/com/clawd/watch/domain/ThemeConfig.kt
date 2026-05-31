@@ -50,17 +50,19 @@ object ThemeConfig {
 
     private const val TAG = "ThemeConfig"
 
-    /** Canonical Clawd state map — also the fallback if manifest loading fails. */
+    /**
+     * Canonical Clawd state map — must match Desktop's themes/clawd/theme.json
+     * exactly so the fingerprints are identical and no false-positive sync is
+     * triggered. Each state maps to exactly the files listed in theme.json.
+     */
     private val CLAWD_STATE_MAP: Map<String, List<String>> = linkedMapOf(
         "idle" to listOf("clawd-idle-follow.svg"),
         "yawning" to listOf("clawd-idle-yawn.svg"),
         "dozing" to listOf("clawd-idle-doze.svg"),
         "collapsing" to listOf("clawd-collapse-sleep.svg"),
         "thinking" to listOf("clawd-working-thinking.svg"),
-        // Intensity tiers (ascending): 1 → typing, 2 → groove, 3+ → building
-        "working" to listOf("clawd-working-typing.svg", "clawd-headphones-groove.svg", "clawd-working-building.svg"),
-        // 1 → groove, 2+ → juggling
-        "juggling" to listOf("clawd-headphones-groove.svg", "clawd-working-juggling.svg"),
+        "working" to listOf("clawd-working-typing.svg"),
+        "juggling" to listOf("clawd-headphones-groove.svg"),
         "sweeping" to listOf("clawd-working-sweeping.svg"),
         "error" to listOf("clawd-error.svg"),
         "attention" to listOf("clawd-happy.svg"),
