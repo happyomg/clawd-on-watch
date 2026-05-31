@@ -7,6 +7,7 @@ class WatchController {
     this.getCurrentSvg = options.getCurrentSvg || (() => null);
     this.getSessionSnapshot = options.getSessionSnapshot || (() => ({ sessions: [] }));
     this.getPendingPermissions = options.getPendingPermissions || (() => []);
+    this.buildApprovalId = options.buildApprovalId || ((p) => p.requestId || p.id || "");
     this.getDoNotDisturb = options.getDoNotDisturb || (() => false);
     this.resolvePermissionEntry = options.resolvePermissionEntry || null;
     this.keepaliveMs = options.keepaliveMs || 10000;
@@ -74,12 +75,15 @@ class WatchController {
       const perms = this.getPendingPermissions();
       if (!perms || !perms.length) return null;
       for (const perm of perms) {
+        const toolInput = perm.toolInput && typeof perm.toolInput === "object"
+          ? (perm.toolInput.command || JSON.stringify(perm.toolInput)).slice(0, 200)
+          : String(perm.toolInput || "").slice(0, 200);
         this.transport.send({
           type: "approval_request",
-          requestId: perm.requestId || perm.id || "",
+          requestId: this.buildApprovalId(perm),
           sessionId: perm.sessionId || "",
-          tool: perm.tool || perm.toolName || "",
-          command: perm.command || perm.toolInput || "",
+          tool: perm.toolName || perm.tool || "",
+          command: toolInput,
           risk: perm.risk || "medium",
         });
       }

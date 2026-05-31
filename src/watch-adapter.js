@@ -40,6 +40,13 @@ function classifyWatchIssue(err) {
   return { code: code || "WATCH_ERROR", category: "watch_error", retryable: true, message, hint: "Watch bridge reported an error." };
 }
 
+function watchApprovalId(perm) {
+  const sid = (perm.sessionId || "").slice(-8);
+  const tool = perm.toolName || perm.tool || "";
+  const ts = perm.createdAt || 0;
+  return `${sid}:${tool}:${ts}`;
+}
+
 function createWatchAdapter(options = {}) {
   const env = options.env || process.env;
   const log = typeof options.log === "function" ? options.log : () => {};
@@ -161,8 +168,15 @@ function createWatchAdapter(options = {}) {
       },
       onApprovalResponse: (msg) => {
         if (!msg || !msg.requestId) return;
-        if (activeConfig.permissionsEnabled && typeof options.resolvePermissionEntry === "function") {
-          try { options.resolvePermissionEntry({ requestId: msg.requestId, decision: msg.decision || "deny" }); } catch (_) {}
+        if (!activeConfig.permissionsEnabled) return;
+        const resolve = typeof options.resolvePermissionEntry === "function" ? options.resolvePermissionEntry : null;
+        const getPerms = typeof options.getPendingPermissions === "function" ? options.getPendingPermissions : null;
+        if (!resolve || !getPerms) return;
+        const perms = getPerms();
+        const match = perms.find((p) => watchApprovalId(p) === msg.requestId);
+        if (match) {
+          const decision = (msg.decision || "").startsWith("allow") ? "allow" : "deny";
+          try { resolve(match, decision); } catch (_) {}
         }
       },
     });
@@ -175,6 +189,7 @@ function createWatchAdapter(options = {}) {
       getPendingPermissions: () => activeConfig.permissionsEnabled
         ? (typeof options.getPendingPermissions === "function" ? options.getPendingPermissions() : [])
         : [],
+      buildApprovalId: watchApprovalId,
       keepaliveMs: 10000,
       log: (message) => log(`controller: ${message}`),
     });
