@@ -2,21 +2,22 @@ package com.clawd.watch.domain
 
 import android.util.Base64
 import android.util.Log
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
 /**
- * Reassembles a theme pushed over CWD5 into a self-contained theme directory:
+ * Reassembles a theme pushed over CWD5. The Desktop now sends pre-rendered
+ * frame images (PNG) instead of raw SVGs, so the Watch never needs a WebView.
  *
+ * Frame structure:
+ *   manifest: {t:"manifest", name, hash, stateMap, files:["idle/000.png",...], frameMeta:{idle:{loopMs,count,fps},...}, totalBytes}
+ *   chunk:    {t:"chunk", f:"idle/000.png", i, c, d:<base64>}
+ *   done:     {t:"done", hash}
+ *
+ * On completion, writes:
  *   <themesRoot>/<hash>/manifest.json
- *   <themesRoot>/<hash>/svg/<file>.svg ...
- *
- * Frames arrive in order (manifest → chunks → done). Chunks are buffered per
- * file by index and written once `done` is seen. [onDone] is invoked with the
- * loaded [ThemeManifest] on success, or null on failure (caller keeps the
- * current theme). All state lives in this instance, so a fresh receiver should
- * be used per transfer; [reset] clears it for reuse.
+ *   <themesRoot>/<hash>/frames/<stateName>/000.png, 001.png, ...
+ *   <themesRoot>/<hash>/frames/<stateName>/meta.json  (from frameMeta)
  */
 class ThemeReceiver(private val themesRoot: File) {
 
@@ -27,29 +28,21 @@ class ThemeReceiver(private val themesRoot: File) {
     private var name = ""
     private var hash = ""
     private var stateMap: JSONObject? = null
+    private var frameMeta: JSONObject? = null
     private val chunks = HashMap<String, Array<String?>>()
     private var totalBytes = 0L
     private var receivedBytes = 0L
 
     @Synchronized
     fun reset() {
-        name = ""
-        hash = ""
-        stateMap = null
-        chunks.clear()
-        totalBytes = 0L
-        receivedBytes = 0L
+        name = ""; hash = ""; stateMap = null; frameMeta = null
+        chunks.clear(); totalBytes = 0L; receivedBytes = 0L
     }
 
-    /** Transfer progress in [0,1], based on bytes received vs. manifest total. */
     @Synchronized
     fun progress(): Float =
         if (totalBytes > 0) (receivedBytes.toFloat() / totalBytes).coerceIn(0f, 1f) else 0f
 
-    /**
-     * Feed one CWD5 frame. Returns a loaded ThemeManifest when the transfer
-     * completes (the "done" frame), otherwise null.
-     */
     @Synchronized
     fun onFrame(json: JSONObject): ThemeManifest? {
         return when (json.optString("t")) {
@@ -65,9 +58,10 @@ class ThemeReceiver(private val themesRoot: File) {
         name = json.optString("name", "")
         hash = json.optString("hash", "")
         stateMap = json.optJSONObject("stateMap")
+        frameMeta = json.optJSONObject("frameMeta")
         totalBytes = json.optLong("totalBytes", 0)
         receivedBytes = 0L
-        Log.i(TAG, "manifest: $name ($hash), $totalBytes bytes")
+        Log.i(TAG, "manifest: $name ($hash), $totalBytes bytes, frameMeta=${frameMeta != null}")
     }
 
     private fun handleChunk(json: JSONObject) {
@@ -80,7 +74,7 @@ class ThemeReceiver(private val themesRoot: File) {
         if (arr.size == count && arr[index] == null) {
             val d = json.optString("d", "")
             arr[index] = d
-            receivedBytes += (d.length * 3L) / 4L // base64 → bytes estimate
+            receivedBytes += (d.length * 3L) / 4L
         }
     }
 
@@ -92,7 +86,7 @@ class ThemeReceiver(private val themesRoot: File) {
         }
         return try {
             val themeDir = File(themesRoot, doneHash)
-            val svgDir = File(themeDir, "svg").apply { mkdirs() }
+            val framesRoot = File(themeDir, "frames")
 
             for ((file, parts) in chunks) {
                 if (parts.any { it == null }) {
@@ -100,11 +94,24 @@ class ThemeReceiver(private val themesRoot: File) {
                     return null
                 }
                 val bytes = Base64.decode(parts.joinToString(""), Base64.DEFAULT)
-                File(svgDir, sanitize(file)).writeBytes(bytes)
+                val outFile = File(framesRoot, sanitize(file))
+                outFile.parentFile?.mkdirs()
+                outFile.writeBytes(bytes)
             }
 
-            // Persist manifest.json so the theme survives restarts and can be
-            // re-loaded by ThemeConfig.loadFromDir.
+            // Write per-state meta.json from frameMeta
+            if (frameMeta != null) {
+                val metaKeys = frameMeta!!.keys()
+                while (metaKeys.hasNext()) {
+                    val stateName = metaKeys.next()
+                    val meta = frameMeta!!.optJSONObject(stateName) ?: continue
+                    val stateDir = File(framesRoot, stateName)
+                    stateDir.mkdirs()
+                    File(stateDir, "meta.json").writeText(meta.toString(), Charsets.UTF_8)
+                }
+            }
+
+            // Write manifest.json
             val manifestOut = JSONObject()
                 .put("name", name)
                 .put("hash", doneHash)
@@ -116,11 +123,7 @@ class ThemeReceiver(private val themesRoot: File) {
                 Log.w(TAG, "loadFromDir failed after write")
                 return null
             }
-            // Integrity check: recomputed fingerprint should match the sender's.
-            if (loaded.hash != doneHash) {
-                Log.w(TAG, "fingerprint mismatch: got ${loaded.hash}, expected $doneHash")
-            }
-            Log.i(TAG, "theme assembled: ${loaded.name} (${loaded.hash}), ${loaded.files.size} files")
+            Log.i(TAG, "theme assembled: ${loaded.name} (${loaded.hash}), ${loaded.files.size} states")
             loaded
         } catch (e: Exception) {
             Log.w(TAG, "assembly failed: ${e.message}")
@@ -130,7 +133,8 @@ class ThemeReceiver(private val themesRoot: File) {
         }
     }
 
-    /** Defensive: never let a filename escape the svg dir. */
-    private fun sanitize(file: String): String =
-        File(file).name.ifEmpty { "unnamed.svg" }
+    private fun sanitize(file: String): String {
+        val parts = file.split("/").filter { it.isNotEmpty() && it != ".." && it != "." }
+        return if (parts.isEmpty()) "unnamed" else parts.joinToString("/")
+    }
 }

@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.os.Bundle
 import android.os.IBinder
+import android.util.Log
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.clawd.watch.data.ApprovalResponse
@@ -25,8 +26,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var petView: PetView
     private lateinit var connectionIndicator: TextView
     private lateinit var stateChip: TextView
-    private lateinit var syncOverlay: android.view.View
-    private lateinit var syncLabel: TextView
 
     private var bleService: BleService? = null
     private var bound = false
@@ -37,7 +36,9 @@ class MainActivity : AppCompatActivity() {
     private var pendingApprovalRisk: String? = null
     private var demoMode = false
     private var demoStateIndex = 0
-    private var themeSyncNeeded = false
+
+    private val syncHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var syncCompleteRunnable: Runnable? = null
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -54,21 +55,12 @@ class MainActivity : AppCompatActivity() {
             }
             service.onThemeChanged = {
                 runOnUiThread {
-                    themeSyncNeeded = false
-                    startPreRecording()
+                    petView.reloadForThemeChange()
+                    showSyncComplete()
                 }
             }
             service.onThemeProgress = { p ->
                 runOnUiThread { showSyncProgress(p) }
-            }
-            petView.onRecordingChanged = { recording ->
-                runOnUiThread { showRecording(recording) }
-            }
-            petView.onCaptureStarted = {
-                runOnUiThread { onCaptureStarted() }
-            }
-            petView.onRecordProgress = { name, current, total ->
-                runOnUiThread { showRecordProgress(name, current, total) }
             }
             val cached = service.getLastState()
             if (cached != null) {
@@ -98,16 +90,12 @@ class MainActivity : AppCompatActivity() {
         petView = findViewById(R.id.pet_view)
         connectionIndicator = findViewById(R.id.connection_indicator)
         stateChip = findViewById(R.id.state_chip)
-        syncOverlay = findViewById(R.id.sync_overlay)
-        syncLabel = findViewById(R.id.sync_label)
 
         if (PairingStore.isPaired(this)) {
             demoMode = false
             updateConnectionState(false)
             updateStateChip(ClawdState.IDLE)
             BleService.start(this)
-            // Pre-record all states on first launch (or if cache was cleared)
-            petView.post { startPreRecording() }
         } else {
             demoMode = true
             connectionIndicator.text = "Demo Mode"
@@ -128,11 +116,7 @@ class MainActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         if (PairingStore.isPaired(this)) {
-            bindService(
-                Intent(this, BleService::class.java),
-                connection,
-                Context.BIND_AUTO_CREATE
-            )
+            bindService(Intent(this, BleService::class.java), connection, Context.BIND_AUTO_CREATE)
         }
         flickDetector?.start()
         petView.resume()
@@ -147,9 +131,6 @@ class MainActivity : AppCompatActivity() {
             bleService?.onPowerModeChanged = null
             bleService?.onThemeChanged = null
             bleService?.onThemeProgress = null
-            petView.onRecordingChanged = null
-            petView.onCaptureStarted = null
-            petView.onRecordProgress = null
             unbindService(connection)
             bound = false
         }
@@ -165,33 +146,19 @@ class MainActivity : AppCompatActivity() {
         petView.alpha = if (connected) 1.0f else 0.5f
     }
 
-    // ── Sync UX — clear feedback at every stage ──
+    // ── Theme Sync UX ──
 
-    private val syncHandler = android.os.Handler(android.os.Looper.getMainLooper())
-    private var syncCompleteRunnable: Runnable? = null
-
-    /**
-     * Stage 1: Desktop is pushing SVG files over BLE (CWD5 chunks).
-     * Progress 0→1 reported by ThemeReceiver.
-     */
     private fun showSyncProgress(fraction: Float) {
         cancelSyncCompleteTimer()
-        if (fraction >= 1f) {
-            showSyncComplete()
-            return
-        }
+        if (fraction >= 1f) return
         connectionIndicator.visibility = android.view.View.VISIBLE
-        connectionIndicator.text = "📥 Receiving theme ${(fraction * 100).toInt()}%"
+        connectionIndicator.text = "📥 Syncing theme ${(fraction * 100).toInt()}%"
         connectionIndicator.setTextColor(0xFFFF9800.toInt())
     }
 
-    /**
-     * Stage 2: SVG transfer complete, theme activated.
-     * Brief confirmation before returning to normal state.
-     */
     private fun showSyncComplete() {
-        connectionIndicator.visibility = android.view.View.VISIBLE
         val name = ThemeConfig.active.name.replaceFirstChar { it.uppercase() }
+        connectionIndicator.visibility = android.view.View.VISIBLE
         connectionIndicator.text = "✅ Theme: $name"
         connectionIndicator.setTextColor(0xFF4CAF50.toInt())
         cancelSyncCompleteTimer()
@@ -199,63 +166,12 @@ class MainActivity : AppCompatActivity() {
         syncHandler.postDelayed(syncCompleteRunnable!!, 3000)
     }
 
-    /**
-     * Stage 3: On-device frame recording (foreground sync mode).
-     * The WebView renders the real animation visibly while PixelCopy captures
-     * frames. UI chrome is hidden so it doesn't get captured into frames.
-     *
-     * Lifecycle: showRecording(true) → overlay visible → onCaptureStarted →
-     * overlay hidden (user sees live animation) → showRecording(false) → restore UI.
-     */
-    /**
-     * Pre-record all states for the active theme. Called after theme sync
-     * completes or on first launch if no cached frames exist.
-     */
-    private fun startPreRecording() {
-        petView.preRecordAll {
-            runOnUiThread { showSyncComplete() }
-        }
-    }
-
-    /**
-     * Recording UX: progress is shown in the connectionIndicator pill (always
-     * visible, small footprint in PixelCopy frames). State chip is hidden.
-     * No full-screen overlay — user sees the live WebView animation below the
-     * progress indicator throughout recording.
-     */
-    private fun showRecording(recording: Boolean) {
-        cancelSyncCompleteTimer()
-        if (recording) {
-            connectionIndicator.visibility = android.view.View.VISIBLE
-            connectionIndicator.text = "🔄 Syncing theme…"
-            connectionIndicator.setTextColor(0xFFFF9800.toInt())
-            stateChip.visibility = android.view.View.VISIBLE
-            stateChip.text = "Preparing…"
-            stateChip.setTextColor(0xAAFFFFFF.toInt())
-        } else {
-            stateChip.visibility = android.view.View.GONE
-            updateConnectionState(bleConnected)
-        }
-    }
-
-    private fun showRecordProgress(name: String, current: Int, total: Int) {
-        connectionIndicator.visibility = android.view.View.VISIBLE
-        connectionIndicator.text = "🔄 Syncing theme"
-        connectionIndicator.setTextColor(0xFFFF9800.toInt())
-        stateChip.visibility = android.view.View.VISIBLE
-        stateChip.text = "🎬 $name ($current/$total)"
-        stateChip.setTextColor(0xAAFFFFFF.toInt())
-    }
-
-    @Suppress("UNUSED_PARAMETER")
-    private fun onCaptureStarted() {
-        // No-op: progress stays visible in the indicator pill.
-    }
-
     private fun cancelSyncCompleteTimer() {
         syncCompleteRunnable?.let { syncHandler.removeCallbacks(it) }
         syncCompleteRunnable = null
     }
+
+    // ── State chip ──
 
     private fun updateStateChip(state: ClawdState) {
         if (!StateChipConfig.isChipVisible(state)) {
@@ -285,25 +201,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun handleCompactState(msg: WatchMessage.CompactState) {
         val state = ClawdState.fromStringOrIdle(msg.state)
-        // Theme-agnostic: PetView resolves the SVG locally from state + count
-        // against the active theme manifest. The desktop no longer dictates a
-        // filename.
         petView.state = state
         petView.activeSessionCount = msg.activeCount
         updateStateChip(state)
         updateConnectionState(true)
-        onThemeHash(msg.themeHash)
-    }
-
-    /**
-     * Compare the desktop's theme fingerprint against the watch's active theme.
-     * A mismatch means the watch is rendering a stale theme; the actual sync
-     * (CWD5 transfer) lands in Phase 2 — for now we just record the gap.
-     */
-    private fun onThemeHash(desktopHash: String?) {
-        if (desktopHash.isNullOrEmpty()) return
-        val localHash = ThemeConfig.active.hash
-        themeSyncNeeded = desktopHash != localHash
     }
 
     private fun handleApprovalRequest(msg: WatchMessage.ApprovalRequest) {
@@ -318,9 +219,7 @@ class MainActivity : AppCompatActivity() {
             FlickDetector.GestureType.FLICK_APPROVE -> "allow-once"
             FlickDetector.GestureType.SHAKE_DENY -> "deny"
         }
-        bleService?.sendApprovalResponse(
-            ApprovalResponse(reqId, decision, "gesture")
-        )
+        bleService?.sendApprovalResponse(ApprovalResponse(reqId, decision, "gesture"))
         clearPendingApproval()
     }
 

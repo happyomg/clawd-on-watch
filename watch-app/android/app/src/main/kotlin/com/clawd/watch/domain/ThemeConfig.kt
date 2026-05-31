@@ -72,7 +72,11 @@ object ThemeConfig {
         "waking" to listOf("clawd-wake.svg")
     )
 
+    // Hash is empty so the first Desktop connection detects a mismatch and
+    // pushes pre-rendered frames. Once received, the hash is computed from
+    // the synced manifest and matches the Desktop's.
     val bundledClawd: ThemeManifest = ThemeManifest("clawd", CLAWD_STATE_MAP, isBundled = true)
+    val EMPTY_HASH = ""
 
     @Volatile
     var active: ThemeManifest = bundledClawd

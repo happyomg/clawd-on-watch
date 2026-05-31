@@ -2383,23 +2383,19 @@ watchAdapter = createWatchAdapter({
       const theme = getActiveTheme();
       if (!theme || !theme.states) return null;
       const id = themeRuntime.getActiveThemeId("clawd");
-      const files = collectSvgFiles(theme.states);
-      const fileData = {};
-      for (const file of files) {
-        const p = themeRuntime.getAssetPath(file);
-        if (p && fs.existsSync(p)) fileData[file] = fs.readFileSync(p);
-      }
+      const svgFiles = collectSvgFiles(theme.states);
       return {
         name: id,
         hash: computeThemeFingerprint(id, theme.states),
         stateMap: theme.states,
-        files,
-        fileData,
+        svgFiles,
+        getAssetPath: (file) => themeRuntime.getAssetPath(file),
       };
     } catch (_) {
       return null;
     }
   },
+  BrowserWindow: require("electron").BrowserWindow,
   getPendingPermissions: () => pendingPermissions,
   getDoNotDisturb: () => doNotDisturb,
   resolvePermissionEntry: (...args) => resolvePermissionEntry(...args),

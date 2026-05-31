@@ -11,7 +11,7 @@
 //   chunk:    {t:"chunk", f:<file>, i:<index>, c:<count>, d:<base64slice>}
 //   done:     {t:"done", hash}
 
-const DEFAULT_CHUNK_B64 = 180; // base64 chars/chunk → ~240B frame, fits MTU 247
+const DEFAULT_CHUNK_B64 = 480; // base64 chars/chunk — larger for frame data
 
 function base64Of(data) {
   if (Buffer.isBuffer(data)) return data.toString("base64");
@@ -49,7 +49,10 @@ function buildThemeFrames(bundle, chunkB64 = DEFAULT_CHUNK_B64) {
     else if (typeof d === "string") totalBytes += Buffer.byteLength(d, "utf8");
   }
 
-  const frames = [{ t: "manifest", name, hash, stateMap, files, totalBytes }];
+  const frameMeta = bundle.frameMeta && typeof bundle.frameMeta === "object" ? bundle.frameMeta : null;
+  const manifest = { t: "manifest", name, hash, stateMap, files, totalBytes };
+  if (frameMeta) manifest.frameMeta = frameMeta;
+  const frames = [manifest];
 
   for (const file of files) {
     const b64 = base64Of(fileData[file]);

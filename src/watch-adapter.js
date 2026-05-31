@@ -6,6 +6,7 @@ const { WatchSidecarClient } = require("./watch-sidecar-client");
 const { WatchController } = require("./watch-controller");
 const { normalizeWatchSettings } = require("./watch-settings");
 const { buildThemeFrames } = require("./watch-theme-transfer");
+const { renderThemeFrames } = require("./watch-theme-renderer");
 
 function truthy(value) {
   if (value === true) return true;
@@ -148,34 +149,76 @@ function createWatchAdapter(options = {}) {
   }
 
   // Compare the desktop's active-theme fingerprint against the watch's reported
-  // hash; on mismatch, stream the theme (manifest + raw SVGs) over CWD5. Guards
-  // against re-pushing a theme already in flight or already sent.
+  // hash; on mismatch, render frames offscreen then stream them over CWD5.
   function maybeSyncTheme() {
     if (!isConnected() || themeSyncing) return;
     const getFp = typeof options.getThemeFingerprint === "function" ? options.getThemeFingerprint : null;
     const getBundle = typeof options.getThemeBundle === "function" ? options.getThemeBundle : null;
+    const BWin = options.BrowserWindow || null;
     if (!getFp || !getBundle) return;
     const desktopHash = getFp();
     if (!desktopHash) return;
-    if (!watchThemeHash) return; // wait for CWD4 read before comparing
-    if (desktopHash === watchThemeHash) return; // already in sync
-    if (desktopHash === lastSyncedHash) return; // pushed; awaiting watch to finish
+    if (!watchThemeHash) return;
+    if (desktopHash === watchThemeHash) return;
+    if (desktopHash === lastSyncedHash) return;
     let bundle;
     try { bundle = getBundle(); } catch (err) { log(`theme bundle failed: ${err.message || err}`); return; }
-    if (!bundle || !bundle.fileData || !bundle.hash) return;
-    let frames;
-    try { frames = buildThemeFrames(bundle); } catch (err) { log(`theme framing failed: ${err.message || err}`); return; }
-    if (!frames.length) return;
+    if (!bundle || !bundle.hash) return;
     themeSyncing = true;
     lastSyncedHash = desktopHash;
-    log(`theme sync → watch: ${bundle.name} (${desktopHash}), ${frames.length} frames`);
-    try {
-      sidecar.sendThemeData(frames);
-    } catch (err) {
+
+    if (BWin && bundle.svgFiles && bundle.getAssetPath) {
+      // Render SVGs → frame sequences offscreen, then push pre-rendered frames
+      log(`theme sync: rendering ${bundle.svgFiles.length} SVGs offscreen...`);
+      renderThemeFrames(BWin, bundle.svgFiles, bundle.getAssetPath, (msg) => log(`renderer: ${msg}`))
+        .then((rendered) => {
+          if (!isConnected()) { themeSyncing = false; lastSyncedHash = null; return; }
+          const frameBundle = buildFrameBundle(bundle, rendered);
+          const transferFrames = buildThemeFrames(frameBundle);
+          log(`theme sync → watch: ${bundle.name} (${desktopHash}), ${transferFrames.length} transfer frames`);
+          try { sidecar.sendThemeData(transferFrames); }
+          catch (err) { themeSyncing = false; lastSyncedHash = null; log(`theme send failed: ${err.message || err}`); }
+        })
+        .catch((err) => {
+          themeSyncing = false;
+          lastSyncedHash = null;
+          log(`theme render failed: ${err.message || err}`);
+        });
+    } else if (bundle.fileData) {
+      // Fallback: push raw SVGs (legacy path)
+      let frames;
+      try { frames = buildThemeFrames(bundle); } catch (err) { themeSyncing = false; lastSyncedHash = null; return; }
+      log(`theme sync → watch (legacy SVG): ${bundle.name} (${desktopHash}), ${frames.length} frames`);
+      try { sidecar.sendThemeData(frames); }
+      catch (err) { themeSyncing = false; lastSyncedHash = null; }
+    } else {
       themeSyncing = false;
       lastSyncedHash = null;
-      log(`theme send failed: ${err.message || err}`);
     }
+  }
+
+  // Convert rendered frame sequences into a transfer bundle
+  function buildFrameBundle(originalBundle, rendered) {
+    const files = [];
+    const fileData = {};
+    const frameMeta = {};
+
+    for (const [baseName, data] of Object.entries(rendered)) {
+      frameMeta[baseName] = data.meta;
+      for (let i = 0; i < data.frames.length; i++) {
+        const name = `${baseName}/${String(i).padStart(3, "0")}.png`;
+        files.push(name);
+        fileData[name] = data.frames[i];
+      }
+    }
+    return {
+      name: originalBundle.name,
+      hash: originalBundle.hash,
+      stateMap: originalBundle.stateMap,
+      files,
+      fileData,
+      frameMeta,
+    };
   }
 
   function cleanup({ keepConfig = false } = {}) {

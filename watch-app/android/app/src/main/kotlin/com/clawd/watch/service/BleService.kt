@@ -375,7 +375,9 @@ class BleService : Service() {
                         put("role", "peripheral")
                         // Active theme fingerprint — desktop compares this to its
                         // own theme on connect to decide whether to push a sync.
-                        put("themeHash", ThemeConfig.active.hash)
+                        val prefs = getSharedPreferences("clawd_state", Context.MODE_PRIVATE)
+                        val syncedHash = prefs.getString("active_theme_hash", null)
+                        put("themeHash", syncedHash ?: "")
                     }.toString().toByteArray(Charsets.UTF_8)
                     val chunk = if (offset < meta.size) meta.copyOfRange(offset, meta.size) else ByteArray(0)
                     gattServer?.sendResponse(device, requestId, android.bluetooth.BluetoothGatt.GATT_SUCCESS, offset, chunk)
