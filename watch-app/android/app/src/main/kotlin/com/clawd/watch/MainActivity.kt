@@ -54,7 +54,11 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread {
                     themeSyncNeeded = false
                     petView.reloadForThemeChange()
+                    updateConnectionState(bleConnected) // clear the sync label
                 }
+            }
+            service.onThemeProgress = { p ->
+                runOnUiThread { showSyncProgress(p) }
             }
             val cached = service.getLastState()
             if (cached != null) {
@@ -128,6 +132,7 @@ class MainActivity : AppCompatActivity() {
             bleService?.onConnectionStateChanged = null
             bleService?.onPowerModeChanged = null
             bleService?.onThemeChanged = null
+            bleService?.onThemeProgress = null
             unbindService(connection)
             bound = false
         }
@@ -141,6 +146,16 @@ class MainActivity : AppCompatActivity() {
             if (connected) StateChipConfig.COLOR_INDICATOR_TEXT else StateChipConfig.COLOR_DISCONNECTED
         )
         petView.alpha = if (connected) 1.0f else 0.5f
+    }
+
+    /** Show theme-transfer progress in the connection indicator. */
+    private fun showSyncProgress(fraction: Float) {
+        if (fraction >= 1f) {
+            updateConnectionState(bleConnected)
+            return
+        }
+        connectionIndicator.text = "🔄 Syncing ${(fraction * 100).toInt()}%"
+        connectionIndicator.setTextColor(0xFFFF9800.toInt())
     }
 
     private fun updateStateChip(state: ClawdState) {

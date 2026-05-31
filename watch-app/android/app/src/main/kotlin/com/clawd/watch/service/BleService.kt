@@ -35,6 +35,7 @@ import com.clawd.watch.MainActivity
 import com.clawd.watch.R
 import com.clawd.watch.data.ApprovalResponse
 import com.clawd.watch.data.WatchMessage
+import com.clawd.watch.domain.ThemeCache
 import com.clawd.watch.domain.ThemeConfig
 import com.clawd.watch.domain.ThemeReceiver
 import com.clawd.watch.power.PowerManager
@@ -122,6 +123,8 @@ class BleService : Service() {
     var onPowerModeChanged: ((PowerManager.PowerMode) -> Unit)? = null
     /** Fired after a CWD5 theme transfer completes and becomes the active theme. */
     var onThemeChanged: (() -> Unit)? = null
+    /** Fired during a CWD5 transfer with progress in [0,1] (1f = complete). */
+    var onThemeProgress: ((Float) -> Unit)? = null
 
     private val themeReceiver by lazy { ThemeReceiver(File(filesDir, "themes")) }
 
@@ -507,14 +510,31 @@ class BleService : Service() {
     private fun handleThemeWrite(data: ByteArray) {
         val text = data.toString(Charsets.UTF_8)
         try {
-            val manifest = themeReceiver.onFrame(JSONObject(text)) ?: return
-            // Transfer complete — activate the new theme, persist it so it
-            // survives restarts, and re-render.
+            val manifest = themeReceiver.onFrame(JSONObject(text))
+            if (manifest == null) {
+                // Mid-transfer — surface progress for the sync indicator.
+                val p = themeReceiver.progress()
+                handler.post { onThemeProgress?.invoke(p) }
+                return
+            }
+            // Transfer complete — activate, persist (survives restarts), prune
+            // the cache, and re-render.
+            val prefs = getSharedPreferences("clawd_state", Context.MODE_PRIVATE)
+            val prev = prefs.getString("active_theme_hash", null)
             ThemeConfig.setActive(manifest)
-            getSharedPreferences("clawd_state", Context.MODE_PRIVATE).edit()
+            prefs.edit()
                 .putString("active_theme_hash", manifest.hash)
+                .putString("prev_theme_hash", prev)
                 .apply()
-            handler.post { onThemeChanged?.invoke() }
+            // Keep current + previous + bundled fallback; evict the rest.
+            ThemeCache.cleanup(
+                File(filesDir, "themes"),
+                setOfNotNull(ThemeConfig.bundledClawd.hash, manifest.hash, prev)
+            )
+            handler.post {
+                onThemeProgress?.invoke(1f)
+                onThemeChanged?.invoke()
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Bad theme frame: ${e.message}")
         }

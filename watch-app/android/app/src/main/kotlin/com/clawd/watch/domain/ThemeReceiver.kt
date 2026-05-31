@@ -28,6 +28,8 @@ class ThemeReceiver(private val themesRoot: File) {
     private var hash = ""
     private var stateMap: JSONObject? = null
     private val chunks = HashMap<String, Array<String?>>()
+    private var totalBytes = 0L
+    private var receivedBytes = 0L
 
     @Synchronized
     fun reset() {
@@ -35,7 +37,14 @@ class ThemeReceiver(private val themesRoot: File) {
         hash = ""
         stateMap = null
         chunks.clear()
+        totalBytes = 0L
+        receivedBytes = 0L
     }
+
+    /** Transfer progress in [0,1], based on bytes received vs. manifest total. */
+    @Synchronized
+    fun progress(): Float =
+        if (totalBytes > 0) (receivedBytes.toFloat() / totalBytes).coerceIn(0f, 1f) else 0f
 
     /**
      * Feed one CWD5 frame. Returns a loaded ThemeManifest when the transfer
@@ -56,7 +65,9 @@ class ThemeReceiver(private val themesRoot: File) {
         name = json.optString("name", "")
         hash = json.optString("hash", "")
         stateMap = json.optJSONObject("stateMap")
-        Log.i(TAG, "manifest: $name ($hash)")
+        totalBytes = json.optLong("totalBytes", 0)
+        receivedBytes = 0L
+        Log.i(TAG, "manifest: $name ($hash), $totalBytes bytes")
     }
 
     private fun handleChunk(json: JSONObject) {
@@ -66,7 +77,11 @@ class ThemeReceiver(private val themesRoot: File) {
         val index = json.optInt("i", -1)
         if (count <= 0 || index < 0 || index >= count) return
         val arr = chunks.getOrPut(file) { arrayOfNulls(count) }
-        if (arr.size == count) arr[index] = json.optString("d", "")
+        if (arr.size == count && arr[index] == null) {
+            val d = json.optString("d", "")
+            arr[index] = d
+            receivedBytes += (d.length * 3L) / 4L // base64 → bytes estimate
+        }
     }
 
     private fun handleDone(json: JSONObject): ThemeManifest? {
