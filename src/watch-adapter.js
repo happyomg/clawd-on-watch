@@ -202,10 +202,22 @@ function createWatchAdapter(options = {}) {
     publishStatus();
   }
 
+  function notifyStateChanged() {
+    if (!started || !controller || typeof controller.notifyStateChanged !== "function") return null;
+    return controller.notifyStateChanged();
+  }
+
+  function notifyPermissionsChanged() {
+    if (!started || !controller || typeof controller.notifyPermissionsChanged !== "function") return null;
+    return controller.notifyPermissionsChanged();
+  }
+
   return {
     start,
     stop,
     applySettingsChange,
+    notifyStateChanged,
+    notifyPermissionsChanged,
     isEnabled: () => activeConfig.enabled,
     isStarted: () => started,
     getStatus: () => publishStatus(),

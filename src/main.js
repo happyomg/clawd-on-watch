@@ -1010,6 +1010,7 @@ const _permCtx = {
   getTelegramApprovalClient: () => getTelegramApprovalClient(),
   onPermissionsChanged: () => {
     if (hardwareBuddyAdapter) hardwareBuddyAdapter.notifyPermissionsChanged();
+    if (watchAdapter) watchAdapter.notifyPermissionsChanged();
   },
   onPermissionResolved: (permEntry, options = {}) => {
     if (!_state || typeof _state.clearPermissionNotification !== "function") return;
@@ -1151,6 +1152,7 @@ const _stateCtx = {
     broadcastSessionHudSnapshot(snapshot);
     repositionFloatingBubbles();
     if (hardwareBuddyAdapter) hardwareBuddyAdapter.notifyStateChanged();
+    if (watchAdapter) watchAdapter.notifyStateChanged();
     // R1a: best-effort completion notifications. Must never throw or block the
     // broadcast — the companion computes synchronously and fires sends async.
     if (telegramCompanion) {
