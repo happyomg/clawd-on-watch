@@ -128,8 +128,8 @@
           if (result && result.status === "ok") {
             btn.textContent = "Installed! Reconnecting...";
             btn.style.borderColor = "#4ADE80";
-            core.ops.showToast("bleak installed", { error: false });
-            updateConfig(core, { enabled: false }).then(() => updateConfig(core, { enabled: true }));
+            core.ops.showToast("bleak installed — reconnecting", { error: false });
+            window.settingsAPI.command("watch.restart");
           } else {
             btn.textContent = "Failed: " + ((result && result.message) || "");
             btn.style.borderColor = "#F87171";

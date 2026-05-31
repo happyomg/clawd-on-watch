@@ -265,6 +265,13 @@ const _settingsController = createSettingsController({
       ? _server.repairRuntimeStatus()
       : false,
     restartClawd: _restartClawdNow,
+    restartWatch: () => {
+      if (typeof watchAdapter !== "undefined" && watchAdapter) {
+        watchAdapter.stop();
+        return watchAdapter.start();
+      }
+      return { status: "ok" };
+    },
     clearSessionsByAgent: (id) => agentRuntime ? agentRuntime.clearSessionsByAgent(id) : 0,
     dismissPermissionsByAgent: (id) => agentRuntime ? agentRuntime.dismissPermissionsByAgent(id) : 0,
     resizePet: _deferredResizePet,

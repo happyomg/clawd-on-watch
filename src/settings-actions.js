@@ -1131,6 +1131,11 @@ const repairDoctorIssue = createRepairDoctorIssue({
   setBubbleCategoryEnabled,
 });
 
+function watchRestart(_payload, deps) {
+  if (deps && typeof deps.restartWatch === "function") return deps.restartWatch();
+  return { status: "ok" };
+}
+
 async function watchInstallBleak(_payload, _deps) {
   const { execFile } = require("child_process");
   const python = process.env.CLAWD_WATCH_PYTHON || process.env.CLAWD_HARDWARE_BUDDY_PYTHON || "python";
@@ -1183,6 +1188,7 @@ const commandRegistry = {
   "telegramMigration.snapshot": telegramMigrationSnapshot,
   "telegramMigration.dispatch": telegramMigrationDispatch,
   "watch.installBleak": watchInstallBleak,
+  "watch.restart": watchRestart,
 };
 
 module.exports = {
