@@ -26,6 +26,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var connectionIndicator: TextView
     private lateinit var stateChip: TextView
     private lateinit var syncOverlay: android.view.View
+    private lateinit var syncLabel: TextView
 
     private var bleService: BleService? = null
     private var bound = false
@@ -54,8 +55,7 @@ class MainActivity : AppCompatActivity() {
             service.onThemeChanged = {
                 runOnUiThread {
                     themeSyncNeeded = false
-                    petView.reloadForThemeChange()
-                    showSyncComplete()
+                    startPreRecording()
                 }
             }
             service.onThemeProgress = { p ->
@@ -66,6 +66,9 @@ class MainActivity : AppCompatActivity() {
             }
             petView.onCaptureStarted = {
                 runOnUiThread { onCaptureStarted() }
+            }
+            petView.onRecordProgress = { name, current, total ->
+                runOnUiThread { showRecordProgress(name, current, total) }
             }
             val cached = service.getLastState()
             if (cached != null) {
@@ -96,12 +99,15 @@ class MainActivity : AppCompatActivity() {
         connectionIndicator = findViewById(R.id.connection_indicator)
         stateChip = findViewById(R.id.state_chip)
         syncOverlay = findViewById(R.id.sync_overlay)
+        syncLabel = findViewById(R.id.sync_label)
 
         if (PairingStore.isPaired(this)) {
             demoMode = false
             updateConnectionState(false)
             updateStateChip(ClawdState.IDLE)
             BleService.start(this)
+            // Pre-record all states on first launch (or if cache was cleared)
+            petView.post { startPreRecording() }
         } else {
             demoMode = true
             connectionIndicator.text = "Demo Mode"
@@ -143,6 +149,7 @@ class MainActivity : AppCompatActivity() {
             bleService?.onThemeProgress = null
             petView.onRecordingChanged = null
             petView.onCaptureStarted = null
+            petView.onRecordProgress = null
             unbindService(connection)
             bound = false
         }
@@ -200,17 +207,42 @@ class MainActivity : AppCompatActivity() {
      * Lifecycle: showRecording(true) → overlay visible → onCaptureStarted →
      * overlay hidden (user sees live animation) → showRecording(false) → restore UI.
      */
+    /**
+     * Pre-record all states for the active theme. Called after theme sync
+     * completes or on first launch if no cached frames exist.
+     */
+    private fun startPreRecording() {
+        petView.preRecordAll {
+            runOnUiThread { showSyncComplete() }
+        }
+    }
+
+    /**
+     * Recording lifecycle:
+     * 1. showRecording(true) → overlay visible, hide UI chrome
+     * 2. showRecordProgress → update overlay with current state + N/total
+     * 3. onCaptureStarted → overlay hidden so PixelCopy gets clean frames
+     *    (user sees the live WebView animation being recorded)
+     * 4. Next state → overlay re-shown with updated progress
+     * 5. showRecording(false) → all done, restore UI
+     */
     private fun showRecording(recording: Boolean) {
         cancelSyncCompleteTimer()
         if (recording) {
             connectionIndicator.visibility = android.view.View.GONE
             stateChip.visibility = android.view.View.GONE
+            syncLabel.text = "🎬 Preparing animations…"
             syncOverlay.visibility = android.view.View.VISIBLE
         } else {
             syncOverlay.visibility = android.view.View.GONE
             connectionIndicator.visibility = android.view.View.VISIBLE
             updateConnectionState(bleConnected)
         }
+    }
+
+    private fun showRecordProgress(name: String, current: Int, total: Int) {
+        syncLabel.text = "🎬 Recording: $name\n$current / $total"
+        syncOverlay.visibility = android.view.View.VISIBLE
     }
 
     private fun onCaptureStarted() {

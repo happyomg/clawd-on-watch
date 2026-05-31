@@ -69,6 +69,10 @@ class PetView @JvmOverloads constructor(
     var onRecordingChanged: ((Boolean) -> Unit)? = null
     /** Notifies when frame capture actually begins (WebView loaded, overlay should hide). */
     var onCaptureStarted: (() -> Unit)? = null
+    /** Progress during preRecordAll: (svgName, currentIndex 1-based, total). */
+    var onRecordProgress: ((String, Int, Int) -> Unit)? = null
+
+    private var preRecording = false
 
     var state: ClawdState = ClawdState.IDLE
         set(value) {
@@ -104,7 +108,82 @@ class PetView @JvmOverloads constructor(
         refresh()
     }
 
+    /**
+     * Pre-record ALL SVG files in the active theme. Skips already-cached states.
+     * Each state's animation is rendered in a visible WebView (user sees it), then
+     * switches to the next. On completion, displays the current state via cached
+     * playback.
+     *
+     * Call after receiving a new theme or on first launch.
+     */
+    fun preRecordAll(onComplete: (() -> Unit)? = null) {
+        val theme = ThemeConfig.active
+        val allFiles = theme.files
+        if (allFiles.isEmpty()) { onComplete?.invoke(); return }
+
+        val toRecord = allFiles.filter { !isComplete(frameCacheDir(theme.hash, it)) }
+        if (toRecord.isEmpty()) {
+            Log.i(TAG, "preRecordAll: all ${allFiles.size} states cached, nothing to do")
+            onComplete?.invoke()
+            return
+        }
+
+        val total = toRecord.size
+        Log.i(TAG, "preRecordAll: ${total} states to record for ${theme.name}")
+        preRecording = true
+        onRecordingChanged?.invoke(true)
+
+        fun recordNext(idx: Int) {
+            if (idx >= total || !preRecording) {
+                preRecording = false
+                post {
+                    onRecordingChanged?.invoke(false)
+                    currentSvg = ""
+                    refresh()
+                    onComplete?.invoke()
+                }
+                return
+            }
+
+            val svg = toRecord[idx]
+            val prettyName = svg.substringBeforeLast('.').replace('-', ' ')
+            post { onRecordProgress?.invoke(prettyName, idx + 1, total) }
+
+            val framesDir = frameCacheDir(theme.hash, svg)
+            val svgText = readSvgSource(theme, svg)
+            if (svgText == null) {
+                Log.w(TAG, "preRecordAll: missing $svg, skipping")
+                recordNext(idx + 1)
+                return
+            }
+
+            recorder?.cancel()
+            val size = if (width > 0) width else FALLBACK_SIZE_PX
+            val rec = FrameRecorder(context, this, size, FPS)
+            recorder = rec
+            rec.record(svgText, framesDir, onCaptureStarted = {
+                post { onCaptureStarted?.invoke() }
+            }) { frames ->
+                rec.shutdown()
+                post {
+                    if (recorder === rec) recorder = null
+                    Log.i(TAG, "preRecordAll: recorded $svg (${frames.size} frames) [${idx+1}/$total]")
+                    recordNext(idx + 1)
+                }
+            }
+        }
+        recordNext(0)
+    }
+
+    /** Cancel an in-progress preRecordAll. */
+    fun cancelPreRecord() {
+        preRecording = false
+        recorder?.cancel()
+        recorder = null
+    }
+
     private fun showSvg(svg: String) {
+        if (preRecording) return
         if (svg == currentSvg) return
         currentSvg = svg
         val gen = ++generation
