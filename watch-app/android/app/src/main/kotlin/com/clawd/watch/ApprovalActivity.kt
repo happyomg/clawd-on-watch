@@ -13,7 +13,9 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.view.InputDevice
 import android.view.MotionEvent
+import android.view.View
 import android.widget.Button
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -28,9 +30,9 @@ class ApprovalActivity : AppCompatActivity() {
     private var responded = false
     private var requestId: String? = null
     private var pendingDecision: Pair<String, String>? = null
+    private var pendingAnswers: Map<String, String>? = null
 
     private val focusButtons = mutableListOf<Button>()
-    private val focusDecisions = mutableListOf<String>()
     private var focusIndex = 0
     private lateinit var vibrator: Vibrator
 
@@ -40,7 +42,8 @@ class ApprovalActivity : AppCompatActivity() {
             bound = true
             pendingDecision?.let { (decision, source) ->
                 pendingDecision = null
-                respond(decision, source)
+                respond(decision, source, pendingAnswers)
+                pendingAnswers = null
             }
         }
 
@@ -62,12 +65,33 @@ class ApprovalActivity : AppCompatActivity() {
         vibrate(risk)
         setContentView(R.layout.activity_approval)
 
+        val questionTexts = intent.getStringArrayExtra("questionTexts")
+        if (questionTexts != null && questionTexts.isNotEmpty()) {
+            setupElicitationUI(questionTexts)
+        } else {
+            setupApprovalUI(tool, command, risk)
+        }
+
+        val timeoutMs = intent.getLongExtra("timeoutMs", 0L)
+        val expiresAt = intent.getLongExtra("expiresAt", 0L)
+        val delay = when {
+            timeoutMs > 0 -> timeoutMs
+            expiresAt > 0 -> maxOf(0L, expiresAt - System.currentTimeMillis())
+            else -> 0L
+        }
+        if (expiresAt > 0 && delay == 0L) {
+            handler.post { onTimeout() }
+        } else if (delay > 0) {
+            handler.postDelayed({ onTimeout() }, delay)
+        }
+    }
+
+    private fun setupApprovalUI(tool: String, command: String, risk: String) {
         val riskColor = when (risk) {
             "high" -> 0xFFF44336.toInt()
             "medium" -> 0xFFFF9800.toInt()
             else -> 0xFF4CAF50.toInt()
         }
-
         findViewById<TextView>(R.id.risk_label).apply {
             text = "RISK: ${risk.uppercase()}"
             setTextColor(riskColor)
@@ -84,24 +108,70 @@ class ApprovalActivity : AppCompatActivity() {
         btnDeny.setOnClickListener { respond("deny", "button") }
 
         focusButtons.addAll(listOf(btnAllow, btnAlways, btnDeny))
-        focusDecisions.addAll(listOf("allow-once", "allow-always", "deny"))
         updateFocus(0)
+        findViewById<TextView>(R.id.gesture_hint).text = "Crown: select · Back: deny"
+    }
 
-        val gestureHint = findViewById<TextView>(R.id.gesture_hint)
-        gestureHint.text = "Crown: select · Back: deny"
+    private fun setupElicitationUI(questionTexts: Array<String>) {
+        val optCounts = intent.getIntArrayExtra("questionOptCounts") ?: intArrayOf()
+        val allOpts = intent.getStringArrayExtra("questionOpts") ?: arrayOf()
 
-        val timeoutMs = intent.getLongExtra("timeoutMs", 0L)
-        val expiresAt = intent.getLongExtra("expiresAt", 0L)
-        val delay = when {
-            timeoutMs > 0 -> timeoutMs
-            expiresAt > 0 -> maxOf(0L, expiresAt - System.currentTimeMillis())
-            else -> 0L
+        val questionText = questionTexts[0]
+        val optCount = if (optCounts.isNotEmpty()) optCounts[0] else 0
+        val options = allOpts.take(optCount)
+
+        findViewById<TextView>(R.id.risk_label).visibility = View.GONE
+        findViewById<TextView>(R.id.tool_label).visibility = View.GONE
+        findViewById<Button>(R.id.btn_allow).visibility = View.GONE
+        findViewById<Button>(R.id.btn_always).visibility = View.GONE
+        findViewById<Button>(R.id.btn_deny).visibility = View.GONE
+
+        findViewById<TextView>(R.id.command_text).apply {
+            text = questionText
+            setBackgroundColor(0)
+            setTextColor(0xFFFFFFFF.toInt())
+            textSize = 13f
         }
-        if (expiresAt > 0 && delay == 0L) {
-            handler.post { onTimeout() }
-        } else if (delay > 0) {
-            handler.postDelayed({ onTimeout() }, delay)
+
+        val hintView = findViewById<TextView>(R.id.gesture_hint)
+        val parentLayout = hintView.parent as LinearLayout
+        val insertIndex = parentLayout.indexOfChild(hintView)
+
+        for ((i, opt) in options.withIndex()) {
+            val btn = Button(this).apply {
+                text = opt
+                textSize = 11f
+                isFocusable = true
+                isFocusableInTouchMode = true
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    (38 * resources.displayMetrics.density).toInt()
+                ).apply { topMargin = (4 * resources.displayMetrics.density).toInt() }
+                setOnClickListener {
+                    respond("allow", "button", mapOf(questionText to opt))
+                }
+            }
+            parentLayout.addView(btn, insertIndex + i)
+            focusButtons.add(btn)
         }
+
+        val skipBtn = Button(this).apply {
+            text = "Skip"
+            textSize = 10f
+            alpha = 0.6f
+            isFocusable = true
+            isFocusableInTouchMode = true
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                (34 * resources.displayMetrics.density).toInt()
+            ).apply { topMargin = (4 * resources.displayMetrics.density).toInt() }
+            setOnClickListener { respond("deny", "button") }
+        }
+        parentLayout.addView(skipBtn, insertIndex + options.size)
+        focusButtons.add(skipBtn)
+
+        if (focusButtons.isNotEmpty()) updateFocus(0)
+        hintView.text = "Crown: select · Back: skip"
     }
 
     override fun onStart() {
@@ -110,10 +180,6 @@ class ApprovalActivity : AppCompatActivity() {
     }
 
     override fun onStop() {
-        if (!responded) {
-            handler.removeCallbacksAndMessages(null)
-            respond("deny", "screen-off")
-        }
         if (bound) {
             unbindService(connection)
             bound = false
@@ -143,6 +209,7 @@ class ApprovalActivity : AppCompatActivity() {
     }
 
     private fun updateFocus(newIndex: Int) {
+        if (focusButtons.isEmpty()) return
         focusIndex = newIndex
         focusButtons.forEachIndexed { i, btn ->
             btn.alpha = if (i == focusIndex) 1.0f else 0.4f
@@ -153,16 +220,17 @@ class ApprovalActivity : AppCompatActivity() {
         }
     }
 
-    private fun respond(decision: String, source: String) {
+    private fun respond(decision: String, source: String, answers: Map<String, String>? = null) {
         val id = requestId ?: return
         if (responded) return
         if (bleService == null) {
             pendingDecision = Pair(decision, source)
+            pendingAnswers = answers
             return
         }
         responded = true
         handler.removeCallbacksAndMessages(null)
-        bleService?.sendApprovalResponse(ApprovalResponse(id, decision, source))
+        bleService?.sendApprovalResponse(ApprovalResponse(id, decision, source, answers))
         finish()
     }
 

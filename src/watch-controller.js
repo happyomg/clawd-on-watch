@@ -83,14 +83,21 @@ class WatchController {
         const toolInput = perm.toolInput && typeof perm.toolInput === "object"
           ? (perm.toolInput.command || JSON.stringify(perm.toolInput)).slice(0, 200)
           : String(perm.toolInput || "").slice(0, 200);
-        this.transport.send({
+        const msg = {
           type: "approval_request",
           requestId: this.buildApprovalId(perm),
           sessionId: perm.sessionId || "",
           tool: perm.toolName || perm.tool || "",
           command: toolInput,
           risk: perm.risk || "medium",
-        });
+        };
+        if (perm.isElicitation && perm.toolInput && Array.isArray(perm.toolInput.questions)) {
+          msg.questions = perm.toolInput.questions.map((q) => ({
+            q: q.question || "",
+            opts: Array.isArray(q.options) ? q.options.map((o) => o.label || "") : [],
+          }));
+        }
+        this.transport.send(msg);
       }
       return true;
     } catch (err) {

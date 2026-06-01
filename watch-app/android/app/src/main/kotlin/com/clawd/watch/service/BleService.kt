@@ -664,6 +664,17 @@ class BleService : Service() {
         val text = data.toString(Charsets.UTF_8)
         try {
             val json = JSONObject(text)
+            val questions = if (json.has("questions")) {
+                val arr = json.getJSONArray("questions")
+                (0 until arr.length()).map { i ->
+                    val qObj = arr.getJSONObject(i)
+                    val opts = if (qObj.has("opts")) {
+                        val oArr = qObj.getJSONArray("opts")
+                        (0 until oArr.length()).map { j -> oArr.getString(j) }
+                    } else emptyList()
+                    WatchMessage.ApprovalRequest.Question(qObj.optString("q", ""), opts)
+                }
+            } else null
             val msg = WatchMessage.ApprovalRequest(
                 requestId = json.getString("requestId"),
                 sessionId = json.optString("sessionId", ""),
@@ -671,7 +682,8 @@ class BleService : Service() {
                 command = json.optString("command", ""),
                 risk = json.optString("risk", "medium"),
                 timeoutMs = if (json.has("timeoutMs")) json.getLong("timeoutMs") else null,
-                expiresAt = if (json.has("expiresAt")) json.getLong("expiresAt") else null
+                expiresAt = if (json.has("expiresAt")) json.getLong("expiresAt") else null,
+                questions = questions
             )
             handler.post { dispatchApproval(msg) }
         } catch (e: Exception) {
@@ -691,6 +703,9 @@ class BleService : Service() {
         val payload = JSONObject().apply {
             put("requestId", response.requestId)
             put("decision", decision)
+            if (response.answers != null) {
+                put("answers", JSONObject(response.answers))
+            }
         }.toString().toByteArray(Charsets.UTF_8)
 
         char.value = payload
@@ -714,6 +729,11 @@ class BleService : Service() {
             putExtra("sessionId", msg.sessionId)
             msg.timeoutMs?.let { putExtra("timeoutMs", it) }
             msg.expiresAt?.let { putExtra("expiresAt", it) }
+            msg.questions?.let { qs ->
+                putExtra("questionTexts", qs.map { it.text }.toTypedArray())
+                putExtra("questionOptCounts", qs.map { it.options.size }.toIntArray())
+                putExtra("questionOpts", qs.flatMap { it.options }.toTypedArray())
+            }
         }
 
         // Try direct launch (works when app is in foreground)

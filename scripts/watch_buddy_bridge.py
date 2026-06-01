@@ -282,11 +282,14 @@ async def run(args):
     def on_cwd3_notify(_sender, data):
         try:
             resp = json.loads(data.decode("utf-8"))
-            emit({
+            msg = {
                 "type": "approval_response",
                 "requestId": resp.get("requestId", ""),
                 "decision": resp.get("decision", "deny"),
-            })
+            }
+            if "answers" in resp:
+                msg["answers"] = resp["answers"]
+            emit(msg)
         except (json.JSONDecodeError, UnicodeDecodeError) as e:
             emit_error("CWD3_PARSE_ERROR", f"Bad approval response: {e}")
 

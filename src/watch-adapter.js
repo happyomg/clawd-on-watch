@@ -280,6 +280,13 @@ function createWatchAdapter(options = {}) {
         const match = perms.find((p) => watchApprovalId(p) === msg.requestId);
         if (match) {
           const decision = (msg.decision || "").startsWith("allow") ? "allow" : "deny";
+          if (match.isElicitation && decision === "allow" && msg.answers) {
+            const build = typeof options.buildElicitationUpdatedInput === "function"
+              ? options.buildElicitationUpdatedInput : null;
+            if (build) {
+              match.resolvedUpdatedInput = build(match.toolInput, msg.answers);
+            }
+          }
           try { resolve(match, decision); } catch (_) {}
         }
       },

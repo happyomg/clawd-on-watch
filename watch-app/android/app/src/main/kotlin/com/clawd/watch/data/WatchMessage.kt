@@ -4,18 +4,6 @@ import org.json.JSONObject
 
 sealed class WatchMessage {
 
-    /**
-     * Compact state pushed by the desktop: {"s":"working","n":2,"th":"79c952"}
-     *
-     * The payload is theme-agnostic — the desktop no longer dictates an SVG
-     * filename. The watch resolves `state` + `activeCount` to a concrete asset
-     * via its local theme manifest (see ThemeConfig). `themeHash` is the active
-     * desktop theme fingerprint; when it differs from the watch's cached theme
-     * the watch knows it is rendering a stale theme and a sync is due.
-     *
-     * `svg` is retained only to parse legacy desktop builds that still send a
-     * filename; current builds omit it and the watch ignores it.
-     */
     data class CompactState(
         val state: String,
         val activeCount: Int,
@@ -30,12 +18,14 @@ sealed class WatchMessage {
         val command: String,
         val risk: String,
         val timeoutMs: Long?,
-        val expiresAt: Long?
-    ) : WatchMessage()
+        val expiresAt: Long?,
+        val questions: List<Question>?
+    ) : WatchMessage() {
+        data class Question(val text: String, val options: List<String>)
+    }
 
     companion object {
         fun parse(json: JSONObject): WatchMessage? {
-            // Compact state: {"s":"working","n":2,"th":"79c952"}
             if (json.has("s")) {
                 return CompactState(
                     state = json.getString("s"),
@@ -45,17 +35,30 @@ sealed class WatchMessage {
                 )
             }
 
-            // Approval request: {"type":"approval_request",...}
             return when (json.optString("type")) {
-                "approval_request", "approval.request" -> ApprovalRequest(
-                    requestId = json.getString("requestId"),
-                    sessionId = json.optString("sessionId", ""),
-                    tool = json.optString("tool", ""),
-                    command = json.optString("command", ""),
-                    risk = json.optString("risk", "medium"),
-                    timeoutMs = if (json.has("timeoutMs")) json.getLong("timeoutMs") else null,
-                    expiresAt = if (json.has("expiresAt")) json.getLong("expiresAt") else null
-                )
+                "approval_request", "approval.request" -> {
+                    val questions = if (json.has("questions")) {
+                        val arr = json.getJSONArray("questions")
+                        (0 until arr.length()).map { i ->
+                            val qObj = arr.getJSONObject(i)
+                            val opts = if (qObj.has("opts")) {
+                                val oArr = qObj.getJSONArray("opts")
+                                (0 until oArr.length()).map { j -> oArr.getString(j) }
+                            } else emptyList()
+                            ApprovalRequest.Question(qObj.optString("q", ""), opts)
+                        }
+                    } else null
+                    ApprovalRequest(
+                        requestId = json.getString("requestId"),
+                        sessionId = json.optString("sessionId", ""),
+                        tool = json.optString("tool", ""),
+                        command = json.optString("command", ""),
+                        risk = json.optString("risk", "medium"),
+                        timeoutMs = if (json.has("timeoutMs")) json.getLong("timeoutMs") else null,
+                        expiresAt = if (json.has("expiresAt")) json.getLong("expiresAt") else null,
+                        questions = questions
+                    )
+                }
                 else -> null
             }
         }
@@ -65,5 +68,6 @@ sealed class WatchMessage {
 data class ApprovalResponse(
     val requestId: String,
     val decision: String,
-    val source: String
+    val source: String,
+    val answers: Map<String, String>? = null
 )
