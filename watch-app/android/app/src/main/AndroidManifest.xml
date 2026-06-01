@@ -58,11 +58,39 @@
             android:launchMode="singleTop"
             android:theme="@style/Theme.ClawdWatch" />
 
+        <!-- Onboarding tutorial (first launch) -->
+        <activity
+            android:name=".OnboardingActivity"
+            android:exported="false"
+            android:theme="@style/Theme.ClawdWatch" />
+
+        <!-- Settings -->
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:theme="@style/Theme.ClawdWatch" />
+
         <!-- BLE foreground service -->
         <service
             android:name=".service.BleService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
+
+        <!-- Watch face complication: agent state -->
+        <service
+            android:name=".complication.StateComplicationService"
+            android:exported="true"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+            <meta-data
+                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+                android:value="SHORT_TEXT" />
+            <meta-data
+                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+                android:value="0" />
+        </service>
 
     </application>
 </manifest>

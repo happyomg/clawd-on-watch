@@ -42,6 +42,7 @@ import com.clawd.watch.data.PairingStore
 import com.clawd.watch.domain.ThemeReceiver
 import com.clawd.watch.power.PowerManager
 import org.json.JSONObject
+import android.content.ComponentName
 import java.io.File
 import java.util.UUID
 
@@ -100,6 +101,8 @@ class BleService : Service() {
     @Volatile private var connectedDevice: BluetoothDevice? = null
     @Volatile private var isAdvertising = false
     @Volatile private var advertiseRequested = false
+    @Volatile var manualOffline = false
+        private set
 
     // Connection watchdog: if the central disappears without sending an
     // LL_TERMINATE_IND (e.g. macOS CoreBluetooth cache), the watch stays
@@ -145,6 +148,7 @@ class BleService : Service() {
     var onWatchMessage: ((WatchMessage) -> Unit)? = null
     var onConnectionStateChanged: ((Boolean) -> Unit)? = null
     var onPowerModeChanged: ((PowerManager.PowerMode) -> Unit)? = null
+    var onBatteryLevelChanged: ((Int) -> Unit)? = null
     /** Fired after theme transfer completes and becomes the active theme. */
     var onThemeChanged: (() -> Unit)? = null
 
@@ -198,6 +202,7 @@ class BleService : Service() {
         restoreActiveTheme()
         powerManager = PowerManager(this)
         powerManager.onModeChanged = { mode -> onPowerModeChanged?.invoke(mode) }
+        powerManager.onBatteryChanged = { level -> onBatteryLevelChanged?.invoke(level) }
         powerManager.start()
     }
 
@@ -316,7 +321,7 @@ class BleService : Service() {
                             onConnectionStateChanged?.invoke(false)
                             updateNotification("Disconnected")
                         }
-                        startAdvertising()
+                        if (!manualOffline) startAdvertising()
                     }
                 }
             }
@@ -553,6 +558,7 @@ class BleService : Service() {
                     val prev = lastCompactState
                     cacheState(msg)
                     updateNotification(msg.state)
+                    requestComplicationUpdate()
                     if (prev != null && prev.state != msg.state) {
                         bringToForeground()
                     }
@@ -580,7 +586,26 @@ class BleService : Service() {
             onConnectionStateChanged?.invoke(false)
             updateNotification("Disconnected")
         }
-        startAdvertising()
+        if (!manualOffline) startAdvertising()
+    }
+
+    fun manualDisconnect() {
+        manualOffline = true
+        val device = connectedDevice
+        if (device != null) {
+            forceDisconnectCentral()
+        } else {
+            stopAdvertising()
+        }
+        handler.post { updateNotification("Offline (manual)") }
+    }
+
+    fun resumeAdvertising() {
+        manualOffline = false
+        if (connectedDevice == null) {
+            startAdvertising()
+            handler.post { updateNotification("Advertising...") }
+        }
     }
 
     /** Restore the last synced theme from filesDir so it survives a restart. */
@@ -758,6 +783,17 @@ class BleService : Service() {
             .build()
         getSystemService(NotificationManager::class.java)
             .notify(NOTIFICATION_ID, notification)
+    }
+
+    // ── Complication update ──
+
+    private fun requestComplicationUpdate() {
+        try {
+            val cn = ComponentName(this, "com.clawd.watch.complication.StateComplicationService")
+            androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
+                .create(this, cn)
+                .requestUpdateAll()
+        } catch (_: Exception) {}
     }
 
     // ── Notification / vibration ──

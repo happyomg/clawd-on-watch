@@ -39,6 +39,8 @@ dependencies {
     implementation("androidx.core:core-ktx:1.9.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("com.google.android.material:material:1.9.0")
+    implementation("androidx.wear.watchface:watchface-complications-data-source:1.1.1")
+    implementation("androidx.wear.watchface:watchface-complications-data-source-ktx:1.1.1")
 
     testImplementation("junit:junit:4.13.2")
 }

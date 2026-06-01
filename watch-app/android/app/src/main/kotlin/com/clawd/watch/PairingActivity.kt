@@ -15,6 +15,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.clawd.watch.data.PairingStore
+import com.clawd.watch.data.SettingsStore
 import com.clawd.watch.service.BleService
 
 /**
@@ -164,6 +165,9 @@ class PairingActivity : AppCompatActivity() {
     }
 
     private fun startMainAndFinish() {
+        if (!SettingsStore.isOnboardingComplete(this)) {
+            startActivity(Intent(this, OnboardingActivity::class.java))
+        }
         startActivity(Intent(this, MainActivity::class.java))
         finish()
     }

@@ -12,6 +12,8 @@ import kotlin.math.abs
 
 class FlickDetector(
     private val context: Context,
+    private val sensitivityMultiplier: Float = 1.0f,
+    private val vibrationAmplitude: Int = 80,
     private val onGesture: (GestureType) -> Unit
 ) : SensorEventListener {
 
@@ -34,9 +36,11 @@ class FlickDetector(
     private var prevX = 0f
     private var shakeDirection = 0 // 1 = positive, -1 = negative
 
-    // Sensitivity tuning
-    private val flickThreshold = DEFAULT_FLICK_THRESHOLD
-    private val flickDeltaThreshold = DEFAULT_DELTA_THRESHOLD
+    // Sensitivity-adjusted thresholds (higher multiplier = lower threshold = easier to trigger)
+    private val flickThreshold = DEFAULT_FLICK_THRESHOLD / sensitivityMultiplier
+    private val flickDeltaThreshold = DEFAULT_DELTA_THRESHOLD / sensitivityMultiplier
+    private val shakeThreshold = SHAKE_THRESHOLD / sensitivityMultiplier
+    private val shakeDeltaThreshold = SHAKE_DELTA_THRESHOLD / sensitivityMultiplier
 
     companion object {
         private const val DEFAULT_FLICK_THRESHOLD = 18f
@@ -46,6 +50,18 @@ class FlickDetector(
         private const val SHAKE_DELTA_THRESHOLD = 10f
         private const val SHAKE_WINDOW_MS = 1500L
         private const val REQUIRED_SHAKES = 3
+
+        fun sensitivityMultiplier(setting: String): Float = when (setting) {
+            "high" -> 1.5f
+            "low" -> 0.6f
+            else -> 1.0f
+        }
+
+        fun vibrationAmplitude(setting: String): Int = when (setting) {
+            "strong" -> 255
+            "off" -> 0
+            else -> 80
+        }
     }
 
     fun start() {
@@ -92,7 +108,7 @@ class FlickDetector(
     private fun detectShake(x: Float, now: Long) {
         val deltaX = abs(x - prevX)
 
-        if (deltaX > SHAKE_DELTA_THRESHOLD && abs(x) > SHAKE_THRESHOLD) {
+        if (deltaX > shakeDeltaThreshold && abs(x) > shakeThreshold) {
             val newDir = if (x > 0) 1 else -1
             if (newDir != shakeDirection) {
                 shakeDirection = newDir
@@ -118,8 +134,9 @@ class FlickDetector(
     }
 
     private fun vibrateConfirm() {
+        if (vibrationAmplitude == 0) return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            vibrator.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE))
+            vibrator.vibrate(VibrationEffect.createOneShot(50, vibrationAmplitude))
         } else {
             @Suppress("DEPRECATION")
             vibrator.vibrate(50)
@@ -127,6 +144,7 @@ class FlickDetector(
     }
 
     private fun vibrateDeny() {
+        if (vibrationAmplitude == 0) return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 80, 60, 80), -1))
         } else {

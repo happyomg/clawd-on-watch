@@ -14,9 +14,11 @@ class PowerManager(private val context: Context) {
         private set
 
     var onModeChanged: ((PowerMode) -> Unit)? = null
+    var onBatteryChanged: ((Int) -> Unit)? = null
 
     private var isScreenOn = true
-    private var batteryPct = 100
+    var batteryPct = 100
+        private set
 
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -38,7 +40,9 @@ class PowerManager(private val context: Context) {
             val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
             val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
             if (level >= 0 && scale > 0) {
+                val prev = batteryPct
                 batteryPct = (level * 100) / scale
+                if (batteryPct != prev) onBatteryChanged?.invoke(batteryPct)
                 updateMode()
             }
         }
