@@ -11,7 +11,7 @@
 //   chunk:    {t:"chunk", f:<file>, i:<index>, c:<count>, d:<base64slice>}
 //   done:     {t:"done", hash}
 
-const DEFAULT_CHUNK_B64 = 360; // base64 chars/chunk — keeps total frame JSON < 512B (no prepared writes needed)
+const DEFAULT_CHUNK_B64 = 360; // base64 chars/chunk — keeps total frame JSON < 512B
 
 function base64Of(data) {
   if (Buffer.isBuffer(data)) return data.toString("base64");

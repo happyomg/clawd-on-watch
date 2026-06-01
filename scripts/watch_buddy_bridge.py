@@ -428,14 +428,10 @@ async def run(args):
                 payload = json.dumps(fr, ensure_ascii=False, separators=(",", ":"))
                 try:
                     payload_bytes = payload.encode("utf-8")
-                    # Use Write Without Response for large frames (avoids macOS
-                    # Prepared Write issues), Write With Response for small ones.
-                    use_response = len(payload_bytes) <= 512
                     await asyncio.wait_for(
-                        client.write_gatt_char(CWD1_STATE, payload_bytes, response=use_response),
+                        client.write_gatt_char(CWD1_STATE, payload_bytes, response=True),
                         timeout=8.0,
                     )
-                    await asyncio.sleep(0.05)  # 50ms pacing per frame
                     if not hasattr(run, '_theme_count'):
                         run._theme_count = 0
                         run._theme_hash = ''
