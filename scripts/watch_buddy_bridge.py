@@ -399,8 +399,8 @@ async def run(args):
                     await do_gatt(client.write_gatt_char(CWD1_STATE, last_snapshot_data))
                 except asyncio.CancelledError:
                     pass
-                except Exception as e:
-                    emit_error("WRITE_FAILED", str(e))
+                except Exception:
+                    await force_disconnect()
                     await force_disconnect()
 
         elif msg_type == "approval_request":
