@@ -74,6 +74,7 @@ function createWatchAdapter(options = {}) {
   // a transfer is in flight, and the hash we last pushed (so we don't re-push
   // the same theme repeatedly while the watch records it).
   let watchThemeHash = null;
+  let watchCachedThemes = null; // Array of hashes the watch has locally cached
   let themeSyncing = false;
   let lastSyncedHash = null;
 
@@ -150,7 +151,7 @@ function createWatchAdapter(options = {}) {
   // Compare the desktop's active-theme fingerprint against the watch's reported
   // hash; on mismatch, render frames offscreen then stream them over CWD5.
   function maybeSyncTheme() {
-    if (!isConnected() || themeSyncing) { log(`maybeSyncTheme: skip (connected=${isConnected()}, syncing=${themeSyncing})`); return; }
+    if (!isConnected()) return;
     const getFp = typeof options.getThemeFingerprint === "function" ? options.getThemeFingerprint : null;
     const getBundle = typeof options.getThemeBundle === "function" ? options.getThemeBundle : null;
     if (!getFp || !getBundle) return;
@@ -159,6 +160,22 @@ function createWatchAdapter(options = {}) {
     if (watchThemeHash === null || watchThemeHash === undefined) return;
     if (watchThemeHash && desktopHash === watchThemeHash) return;
     if (desktopHash === lastSyncedHash) return;
+    // If a different theme is now requested mid-transfer, cancel the old sync
+    if (themeSyncing && lastSyncedHash && desktopHash !== lastSyncedHash) {
+      log(`theme sync interrupted: ${lastSyncedHash} → ${desktopHash}`);
+      themeSyncing = false;
+      lastSyncedHash = null;
+    }
+    if (themeSyncing) return;
+    // Fast path: watch already has this theme cached locally — send activate command
+    if (watchCachedThemes && watchCachedThemes.includes(desktopHash)) {
+      log(`theme activate (cached on watch): ${desktopHash}`);
+      try {
+        sidecar.sendState({ type: "activate_theme", hash: desktopHash });
+        lastSyncedHash = desktopHash;
+      } catch (err) { log(`theme activate failed: ${err.message || err}`); }
+      return;
+    }
     let bundle;
     try { bundle = getBundle(); } catch (err) { log(`theme bundle failed: ${err.message || err}`); return; }
     if (!bundle || !bundle.fileData || !bundle.hash) return;
@@ -219,6 +236,7 @@ function createWatchAdapter(options = {}) {
           isScanning = !!status.scanning;
         }
         if (status && "themeHash" in status) watchThemeHash = status.themeHash || "";
+        if (status && Array.isArray(status.cachedThemes)) watchCachedThemes = status.cachedThemes;
         publishStatus();
         maybeSyncTheme();
       },
@@ -252,6 +270,7 @@ function createWatchAdapter(options = {}) {
           themeSyncing = false;
           lastSyncedHash = null;
           watchThemeHash = null;
+          watchCachedThemes = null;
         }
         publishStatus();
         // Push current state FIRST (small payload, single GATT write) so the
@@ -264,6 +283,9 @@ function createWatchAdapter(options = {}) {
         const frames = (msg && msg.frames) || 0;
         if (frames > 0 && msg.hash) {
           watchThemeHash = msg.hash;
+          if (watchCachedThemes && !watchCachedThemes.includes(msg.hash)) {
+            watchCachedThemes.push(msg.hash);
+          }
         } else {
           lastSyncedHash = null; // failed — allow retry
         }
@@ -393,6 +415,7 @@ function createWatchAdapter(options = {}) {
     themeSyncing = false;
     lastSyncedHash = null;
     watchThemeHash = null;
+    watchCachedThemes = null;
     publishStatus();
   }
 

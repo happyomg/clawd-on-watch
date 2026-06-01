@@ -386,11 +386,11 @@ class BleService : Service() {
                         put("deviceName", Build.MODEL)
                         put("version", "0.1.0")
                         put("role", "peripheral")
-                        // Active theme fingerprint — desktop compares this to its
-                        // own theme on connect to decide whether to push a sync.
                         val prefs = getSharedPreferences("clawd_state", Context.MODE_PRIVATE)
                         val syncedHash = prefs.getString("active_theme_hash", null)
                         put("themeHash", syncedHash ?: "")
+                        val cached = ThemeCache.listCachedHashes(File(filesDir, "themes"))
+                        put("cachedThemes", org.json.JSONArray(cached))
                     }.toString().toByteArray(Charsets.UTF_8)
                     val chunk = if (offset < meta.size) meta.copyOfRange(offset, meta.size) else ByteArray(0)
                     gattServer?.sendResponse(device, requestId, android.bluetooth.BluetoothGatt.GATT_SUCCESS, offset, chunk)
@@ -552,6 +552,11 @@ class BleService : Service() {
                 forceDisconnectCentral()
                 return
             }
+            // Activate a locally cached theme without full transfer
+            if (json.optString("type") == "activate_theme") {
+                handleActivateTheme(json.optString("hash", ""))
+                return
+            }
             val msg = WatchMessage.parse(json)
             if (msg != null) {
                 if (msg is WatchMessage.CompactState) {
@@ -587,6 +592,30 @@ class BleService : Service() {
             updateNotification("Disconnected")
         }
         if (!manualOffline) startAdvertising()
+    }
+
+    private fun handleActivateTheme(hash: String) {
+        if (hash.isBlank()) return
+        val themesRoot = File(filesDir, "themes")
+        val dir = File(themesRoot, hash)
+        val manifest = ThemeConfig.loadFromDir(dir)
+        if (manifest != null) {
+            val prefs = getSharedPreferences("clawd_state", Context.MODE_PRIVATE)
+            val prev = prefs.getString("active_theme_hash", null)
+            ThemeConfig.setActive(manifest)
+            ThemeCache.touch(themesRoot, hash)
+            prefs.edit()
+                .putString("active_theme_hash", hash)
+                .putString("prev_theme_hash", prev)
+                .apply()
+            handler.post {
+                onThemeProgress?.invoke(ThemeSyncProgress(1f, null, 0, 0))
+                onThemeChanged?.invoke()
+            }
+            Log.i(TAG, "activate_theme: switched to cached $hash (${manifest.name})")
+        } else {
+            Log.w(TAG, "activate_theme: $hash not in local cache, ignoring")
+        }
     }
 
     fun manualDisconnect() {
@@ -650,14 +679,16 @@ class BleService : Service() {
             val prefs = getSharedPreferences("clawd_state", Context.MODE_PRIVATE)
             val prev = prefs.getString("active_theme_hash", null)
             ThemeConfig.setActive(manifest)
+            val themesRoot = File(filesDir, "themes")
+            ThemeCache.touch(themesRoot, manifest.hash)
             prefs.edit()
                 .putString("active_theme_hash", manifest.hash)
                 .putString("prev_theme_hash", prev)
                 .apply()
-            // Keep current + previous + bundled fallback; evict the rest.
+            // LRU eviction: protect current + bundled; rest evicted by age
             ThemeCache.cleanup(
-                File(filesDir, "themes"),
-                setOfNotNull(ThemeConfig.bundledClawd.hash, manifest.hash, prev)
+                themesRoot,
+                setOfNotNull(ThemeConfig.bundledClawd.hash, manifest.hash)
             )
             handler.post {
                 onThemeProgress?.invoke(ThemeSyncProgress(1f, null, 0, 0))

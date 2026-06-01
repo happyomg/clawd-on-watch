@@ -185,6 +185,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateConnectionState(connected: Boolean) {
         bleConnected = connected
+        if (!connected && isSyncing) {
+            isSyncing = false
+            stateChip.visibility = View.GONE
+            cancelSyncCompleteTimer()
+        }
         if (isSyncing) return
         connectionIndicator.text = if (connected) "Connected" else "Disconnected"
         connectionIndicator.setTextColor(if (connected) StateChipConfig.COLOR_INDICATOR_TEXT else StateChipConfig.COLOR_DISCONNECTED)
@@ -379,6 +384,7 @@ class MainActivity : AppCompatActivity() {
         } else {
             items.add("Reconnect"); actions.add { reconnect() }
         }
+        items.add("Themes"); actions.add { openThemeManager() }
         items.add("Re-pair"); actions.add { confirmRePair() }
         items.add("Settings"); actions.add { openSettings() }
         items.add("About"); actions.add { showAbout() }
@@ -411,6 +417,10 @@ class MainActivity : AppCompatActivity() {
     private fun rePair() {
         PairingStore.clear(this); BleService.stop(this)
         startActivity(Intent(this, PairingActivity::class.java)); finish()
+    }
+
+    private fun openThemeManager() {
+        startActivity(Intent(this, ThemeManagerActivity::class.java))
     }
 
     private fun openSettings() {
