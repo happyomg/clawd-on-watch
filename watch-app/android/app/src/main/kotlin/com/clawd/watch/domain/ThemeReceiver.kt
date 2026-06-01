@@ -6,7 +6,7 @@ import org.json.JSONObject
 import java.io.File
 
 /**
- * Reassembles a theme pushed over CWD5 into svg files + manifest:
+ * Reassembles a theme pushed over CWD1 into svg files + manifest:
  *   <themesRoot>/<hash>/manifest.json
  *   <themesRoot>/<hash>/svg/<file>.svg
  *
@@ -19,13 +19,29 @@ class ThemeReceiver(private val themesRoot: File) {
     private var name = ""; private var hash = ""; private var stateMap: JSONObject? = null
     private val chunks = HashMap<String, Array<String?>>()
     private var totalBytes = 0L; private var receivedBytes = 0L
+    private var files: List<String> = emptyList()
+    private var completedFiles = mutableSetOf<String>()
 
     @Synchronized fun reset() {
-        name = ""; hash = ""; stateMap = null; chunks.clear(); totalBytes = 0; receivedBytes = 0
+        name = ""; hash = ""; stateMap = null; chunks.clear()
+        totalBytes = 0; receivedBytes = 0; files = emptyList(); completedFiles.clear()
     }
 
+    /** Overall byte-level progress 0..1. */
     @Synchronized fun progress(): Float =
         if (totalBytes > 0) (receivedBytes.toFloat() / totalBytes).coerceIn(0f, 1f) else 0f
+
+    /** Name of the file currently being received (chunk arriving). */
+    @Synchronized fun currentFileName(): String? {
+        val lastFile = chunks.keys.lastOrNull() ?: return null
+        return lastFile.substringBeforeLast('.').replace('-', ' ')
+    }
+
+    /** 1-based index of the current file being received. */
+    @Synchronized fun fileIndex(): Int = completedFiles.size + 1
+
+    /** Total number of files to receive. */
+    @Synchronized fun fileCount(): Int = files.size
 
     @Synchronized fun onFrame(json: JSONObject): ThemeManifest? = when (json.optString("t")) {
         "manifest" -> { handleManifest(json); null }
@@ -35,10 +51,13 @@ class ThemeReceiver(private val themesRoot: File) {
     }
 
     private fun handleManifest(json: JSONObject) {
-        chunks.clear(); name = json.optString("name", ""); hash = json.optString("hash", "")
+        chunks.clear(); completedFiles.clear()
+        name = json.optString("name", ""); hash = json.optString("hash", "")
         stateMap = json.optJSONObject("stateMap")
         totalBytes = json.optLong("totalBytes", 0); receivedBytes = 0
-        Log.i(TAG, "manifest: $name ($hash), $totalBytes bytes")
+        val filesArr = json.optJSONArray("files")
+        files = if (filesArr != null) (0 until filesArr.length()).map { filesArr.getString(it) } else emptyList()
+        Log.i(TAG, "manifest: $name ($hash), ${files.size} files, $totalBytes bytes")
     }
 
     private fun handleChunk(json: JSONObject) {
@@ -49,12 +68,13 @@ class ThemeReceiver(private val themesRoot: File) {
         if (arr.size == count && arr[index] == null) {
             val d = json.optString("d", ""); arr[index] = d
             receivedBytes += (d.length * 3L) / 4L
+            // Track file completion
+            if (arr.all { it != null }) completedFiles.add(file)
         }
     }
 
     private fun handleDone(json: JSONObject): ThemeManifest? {
         val doneHash = json.optString("hash", hash)
-        // stateMap may come in the done frame (to keep manifest small)
         if (json.has("stateMap")) stateMap = json.optJSONObject("stateMap")
         if (doneHash.isEmpty() || stateMap == null) { Log.w(TAG, "incomplete"); return null }
         return try {

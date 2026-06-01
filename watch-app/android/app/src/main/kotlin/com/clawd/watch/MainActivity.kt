@@ -127,18 +127,21 @@ class MainActivity : AppCompatActivity() {
 
     // ── Sync UX — SVG transfer + frame recording = one "sync" ──
 
-    /** BLE transfer progress (CWD5 chunks arriving). */
-    private fun showTransferProgress(fraction: Float) {
-        if (fraction >= 1f) return // wait for onThemeSynced
+    /** Phase 1: receiving SVG files over BLE. */
+    private fun showTransferProgress(progress: BleService.ThemeSyncProgress) {
+        if (progress.fraction >= 1f) return
         enterSyncMode()
-        connectionIndicator.text = "📥 Syncing theme ${(fraction * 100).toInt()}%"
-        stateChip.visibility = android.view.View.GONE
+        val file = progress.currentFile ?: "..."
+        connectionIndicator.text = "📥 Receiving theme"
+        stateChip.visibility = android.view.View.VISIBLE
+        stateChip.text = "$file (${progress.fileIndex}/${progress.fileTotal})"
+        stateChip.setTextColor(0xAAFFFFFF.toInt())
     }
 
-    /** SVG transfer done → trigger frame recording. */
+    /** SVG transfer done → Phase 2: record frames. */
     private fun onThemeSynced() {
         enterSyncMode()
-        connectionIndicator.text = "🔄 Preparing animations…"
+        connectionIndicator.text = "🎬 Preparing animations"
         stateChip.visibility = android.view.View.GONE
         petView.preRecordAll {
             runOnUiThread { exitSyncMode() }
@@ -147,15 +150,15 @@ class MainActivity : AppCompatActivity() {
 
     /** Frame recording started/stopped. */
     private fun onRecordingChanged(recording: Boolean) {
-        if (!recording && isSyncing) return // exitSyncMode handles this via preRecordAll completion
+        if (!recording && isSyncing) return
     }
 
-    /** Per-state recording progress. */
+    /** Phase 2 per-state progress — user sees each animation as it's recorded. */
     private fun showRecordProgress(name: String, current: Int, total: Int) {
         if (!isSyncing) return
-        connectionIndicator.text = "🔄 Syncing theme"
+        connectionIndicator.text = "🎬 Preparing animations"
         stateChip.visibility = android.view.View.VISIBLE
-        stateChip.text = "🎬 $name ($current/$total)"
+        stateChip.text = "$name ($current/$total)"
         stateChip.setTextColor(0xAAFFFFFF.toInt())
     }
 

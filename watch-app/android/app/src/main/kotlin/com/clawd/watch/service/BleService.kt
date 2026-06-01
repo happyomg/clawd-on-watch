@@ -145,10 +145,17 @@ class BleService : Service() {
     var onWatchMessage: ((WatchMessage) -> Unit)? = null
     var onConnectionStateChanged: ((Boolean) -> Unit)? = null
     var onPowerModeChanged: ((PowerManager.PowerMode) -> Unit)? = null
-    /** Fired after a CWD5 theme transfer completes and becomes the active theme. */
+    /** Fired after theme transfer completes and becomes the active theme. */
     var onThemeChanged: (() -> Unit)? = null
-    /** Fired during a CWD5 transfer with progress in [0,1] (1f = complete). */
-    var onThemeProgress: ((Float) -> Unit)? = null
+
+    data class ThemeSyncProgress(
+        val fraction: Float,
+        val currentFile: String?,
+        val fileIndex: Int,
+        val fileTotal: Int
+    )
+    /** Fired during theme transfer with file-level progress. */
+    var onThemeProgress: ((ThemeSyncProgress) -> Unit)? = null
 
     private val themeReceiver by lazy { ThemeReceiver(File(filesDir, "themes")) }
 
@@ -604,8 +611,13 @@ class BleService : Service() {
             }
             val manifest = themeReceiver.onFrame(json)
             if (manifest == null) {
-                val p = themeReceiver.progress()
-                handler.post { onThemeProgress?.invoke(p) }
+                val progress = ThemeSyncProgress(
+                    fraction = themeReceiver.progress(),
+                    currentFile = themeReceiver.currentFileName(),
+                    fileIndex = themeReceiver.fileIndex(),
+                    fileTotal = themeReceiver.fileCount()
+                )
+                handler.post { onThemeProgress?.invoke(progress) }
                 return
             }
             // Transfer complete — activate, persist (survives restarts), prune
@@ -623,7 +635,7 @@ class BleService : Service() {
                 setOfNotNull(ThemeConfig.bundledClawd.hash, manifest.hash, prev)
             )
             handler.post {
-                onThemeProgress?.invoke(1f)
+                onThemeProgress?.invoke(ThemeSyncProgress(1f, null, 0, 0))
                 onThemeChanged?.invoke()
             }
         } catch (e: Exception) {

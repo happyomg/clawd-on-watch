@@ -108,6 +108,8 @@ class PetView @JvmOverloads constructor(
                 post {
                     if (recorder === rec) recorder = null
                     Log.i(TAG, "preRecordAll: $svg ${frames.size} frames [${idx+1}/${toRecord.size}]")
+                    // Play the just-recorded state so user sees each animation
+                    if (frames.isNotEmpty() && isComplete(framesDir)) playFrames(framesDir)
                     recordNext(idx + 1)
                 }
             }
