@@ -11,7 +11,7 @@
 //   chunk:    {t:"chunk", f:<file>, i:<index>, c:<count>, d:<base64slice>}
 //   done:     {t:"done", hash}
 
-const DEFAULT_CHUNK_B64 = 480; // base64 chars/chunk
+const DEFAULT_CHUNK_B64 = 360; // base64 chars/chunk — keeps total frame JSON < 512B (no prepared writes needed)
 
 function base64Of(data) {
   if (Buffer.isBuffer(data)) return data.toString("base64");
@@ -50,7 +50,9 @@ function buildThemeFrames(bundle, chunkB64 = DEFAULT_CHUNK_B64) {
   }
 
   const frameMeta = bundle.frameMeta && typeof bundle.frameMeta === "object" ? bundle.frameMeta : null;
-  const manifest = { t: "manifest", name, hash, stateMap, files, totalBytes };
+  // Keep manifest small (< 512B) — stateMap goes in the done frame so we
+  // avoid Prepared Writes (which are unreliable on macOS CoreBluetooth).
+  const manifest = { t: "manifest", name, hash, files, totalBytes };
   if (frameMeta) manifest.frameMeta = frameMeta;
   const frames = [manifest];
 
@@ -70,7 +72,9 @@ function buildThemeFrames(bundle, chunkB64 = DEFAULT_CHUNK_B64) {
     }
   }
 
-  frames.push({ t: "done", hash });
+  const done = { t: "done", hash };
+  if (stateMap && Object.keys(stateMap).length > 0) done.stateMap = stateMap;
+  frames.push(done);
   return frames;
 }
 

@@ -324,6 +324,7 @@ class BleService : Service() {
             offset: Int,
             value: ByteArray?
         ) {
+            lastCentralActivityMs = android.os.SystemClock.elapsedRealtime()
             if (responseNeeded) {
                 gattServer?.sendResponse(device, requestId, android.bluetooth.BluetoothGatt.GATT_SUCCESS, offset, value)
             }

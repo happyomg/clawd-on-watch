@@ -54,6 +54,8 @@ class ThemeReceiver(private val themesRoot: File) {
 
     private fun handleDone(json: JSONObject): ThemeManifest? {
         val doneHash = json.optString("hash", hash)
+        // stateMap may come in the done frame (to keep manifest small)
+        if (json.has("stateMap")) stateMap = json.optJSONObject("stateMap")
         if (doneHash.isEmpty() || stateMap == null) { Log.w(TAG, "incomplete"); return null }
         return try {
             val themeDir = File(themesRoot, doneHash)
