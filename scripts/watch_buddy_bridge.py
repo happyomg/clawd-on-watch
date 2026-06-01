@@ -428,13 +428,14 @@ async def run(args):
                 payload = json.dumps(fr, ensure_ascii=False, separators=(",", ":"))
                 try:
                     payload_bytes = payload.encode("utf-8")
-                    await asyncio.wait_for(
-                        client.write_gatt_char(CWD1_STATE, payload_bytes, response=True),
-                        timeout=8.0,
-                    )
                     if not hasattr(run, '_theme_count'):
                         run._theme_count = 0
                         run._theme_hash = ''
+                    use_response = (run._theme_count % 10 == 9)
+                    await asyncio.wait_for(
+                        client.write_gatt_char(CWD1_STATE, payload_bytes, response=use_response),
+                        timeout=8.0,
+                    )
                     run._theme_count += 1
                     if fr.get("t") == "done":
                         run._theme_hash = fr.get("hash", "")
