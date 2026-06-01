@@ -61,6 +61,45 @@ pip install bleak            # 依赖
 python3 scripts/watch_buddy_bridge.py --name-prefix Clawd
 ```
 
+## 同步上游 (clawd-on-desk) 注意事项
+
+本项目 fork 自 [clawd-on-desk](https://github.com/rullerzhou-afk/clawd-on-desk)。upstream remote 应指向原始项目：
+
+```bash
+# 确认 upstream 指向正确
+git remote -v | grep upstream
+# 期望: https://github.com/rullerzhou-afk/clawd-on-desk.git
+
+# 同步流程
+git fetch upstream
+git checkout main && git merge upstream/main && git push origin main
+# feature 分支 rebase: git rebase main
+```
+
+### Rebase 后必须检查的事项
+
+我们只修改了 15 个上游文件，其中 `src/main.js` 是最高风险的冲突点。Rebase/merge 后必须逐项验证：
+
+| 检查项 | 位置 | 验证方法 |
+|--------|------|---------|
+| **权限过滤器完整性** | `src/main.js` hardwareBuddy 和 watch 的 `getPendingPermissions` | 必须包含 `!p.isElicitation`、`p.toolName !== "ExitPlanMode"`、`p.toolName !== "AskUserQuestion"` 三个条件。丢失会导致 ExitPlanMode/AskUserQuestion 被推到手表，手表息屏 auto-deny 导致 Claude Code 报 "permission denied by hook" |
+| **watchAdapter 状态钩子** | `src/main.js` `_stateCtx.onStateChanged` | `if (watchAdapter) watchAdapter.notifyStateChanged()` 必须存在，通常在 `hardwareBuddyAdapter.notifyStateChanged()` 旁边 |
+| **watchAdapter 权限钩子** | `src/main.js` `_permCtx.onPermissionsChanged` | `if (watchAdapter) watchAdapter.notifyPermissionsChanged()` 必须存在 |
+| **watch settings commands** | `src/main.js` `_settingsController` | `restartWatch`、`scanWatch`、`connectWatch`、`disconnectWatch`、`reconnectWatch` 五个 action 必须存在 |
+| **settings.html script 引用** | `src/settings.html` | `<script src="settings-watch-panel.js">` 必须存在 |
+| **watch panel 挂载** | `src/settings-tab-telegram-approval.js` | `buildWatchChannelCard()` 调用必须存在 |
+
+### 快速识别冲突归属
+
+冲突 hunk 中搜索 `watch` 或 `Watch` 关键词——包含这些的是我们的代码，上游不存在任何 watch 相关代码。我们的插入模式：
+- 独立代码块以 `// ── Watch adapter` 标记开始
+- 在 `hardwareBuddyAdapter` 调用旁添加等价的 `watchAdapter` 单行调用
+- `README*.md` 冲突直接 `git checkout --ours`
+
+### 历史教训
+
+- **2026-06-01 rebase 回退**：upstream 独立修改了 `getPendingPermissions`（只加了 `isCodexNotify`/`isKimiNotify`/`isHardwareBuddyTest`），与我们更严格的 filter（含 `isElicitation`/`ExitPlanMode`/`AskUserQuestion`）冲突，rebase 自动解析时选择了上游的简化版本，导致我们的三个关键过滤条件丢失。此类"静默回退"不会产生冲突标记，只能通过 rebase 后人工检查发现。
+
 ## E2E 测试规范
 
 ### ⚠️ 测试前必须清理（防进程冲突）
