@@ -144,11 +144,11 @@ async def run(args):
         loop.add_signal_handler(sig, lambda: stdin_queue.put_nowait(None))
 
     # ── Cancellable GATT wrapper ──────────────────────────────────────────
-    async def do_gatt(coro):
+    async def do_gatt(coro, timeout=8.0):
         nonlocal current_op
         current_op = asyncio.ensure_future(coro)
         try:
-            return await current_op
+            return await asyncio.wait_for(current_op, timeout=timeout)
         finally:
             current_op = None
 
@@ -273,6 +273,8 @@ async def run(args):
         if _client is not client and client is not None:
             return
         client = None
+        if current_op and not current_op.done():
+            current_op.cancel()
         emit_status(False)
         if not stopping and not manual_disconnect:
             asyncio.ensure_future(schedule_reconnect())
@@ -291,7 +293,7 @@ async def run(args):
     # ── Connect ───────────────────────────────────────────────────────────
     async def connect_to(address):
         nonlocal client, connected_name, last_address, reconnect_attempt, reconnect_task
-        if reconnect_task:
+        if reconnect_task and reconnect_task is not asyncio.current_task():
             reconnect_task.cancel()
             reconnect_task = None
         if client and client.is_connected:
@@ -401,7 +403,6 @@ async def run(args):
                     pass
                 except Exception:
                     await force_disconnect()
-                    await force_disconnect()
 
         elif msg_type == "approval_request":
             if client and client.is_connected:
@@ -427,7 +428,10 @@ async def run(args):
                     # Use Write Without Response for large frames (avoids macOS
                     # Prepared Write issues), Write With Response for small ones.
                     use_response = len(payload_bytes) <= 512
-                    await client.write_gatt_char(CWD1_STATE, payload_bytes, response=use_response)
+                    await asyncio.wait_for(
+                        client.write_gatt_char(CWD1_STATE, payload_bytes, response=use_response),
+                        timeout=8.0,
+                    )
                     await asyncio.sleep(0.05)  # 50ms pacing per frame
                     if not hasattr(run, '_theme_count'):
                         run._theme_count = 0
