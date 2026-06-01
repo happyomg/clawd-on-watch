@@ -2323,7 +2323,14 @@ hardwareBuddyAdapter = createHardwareBuddyAdapter({
   env: process.env,
   getSettings: () => _settingsController.get("hardwareBuddy"),
   getSessionSnapshot: () => _state.buildSessionSnapshot(),
-  getPendingPermissions: () => pendingPermissions,
+  getPendingPermissions: () => pendingPermissions.filter(
+    p => !p.isElicitation
+      && !p.isCodexNotify
+      && !p.isKimiNotify
+      && !p.isHardwareBuddyTest
+      && p.toolName !== "ExitPlanMode"
+      && p.toolName !== "AskUserQuestion"
+  ),
   getDoNotDisturb: () => doNotDisturb,
   isAgentEnabled: (agentId) => _isAgentEnabled({ agents: _settingsController.get("agents") }, agentId),
   isAgentPermissionsEnabled: (agentId) =>
@@ -2400,7 +2407,14 @@ watchAdapter = createWatchAdapter({
       return null;
     }
   },
-  getPendingPermissions: () => pendingPermissions,
+  getPendingPermissions: () => pendingPermissions.filter(
+    p => !p.isElicitation
+      && !p.isCodexNotify
+      && !p.isKimiNotify
+      && !p.isHardwareBuddyTest
+      && p.toolName !== "ExitPlanMode"
+      && p.toolName !== "AskUserQuestion"
+  ),
   getDoNotDisturb: () => doNotDisturb,
   resolvePermissionEntry: (...args) => resolvePermissionEntry(...args),
   log: watchLog,

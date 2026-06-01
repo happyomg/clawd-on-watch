@@ -189,6 +189,92 @@ describe("watchApprovalId", () => {
   });
 });
 
+describe("watch-adapter permission filtering (main.js wiring contract)", () => {
+  // main.js filters getPendingPermissions before passing to the adapter.
+  // This test documents the contract: ExitPlanMode, AskUserQuestion, elicitations,
+  // and notification-only entries must never reach the watch.
+  function applyMainFilter(perms) {
+    return perms.filter(
+      p => !p.isElicitation
+        && !p.isCodexNotify
+        && !p.isKimiNotify
+        && !p.isHardwareBuddyTest
+        && p.toolName !== "ExitPlanMode"
+        && p.toolName !== "AskUserQuestion"
+    );
+  }
+
+  it("should filter out ExitPlanMode", () => {
+    const perms = [
+      { sessionId: "s1", toolName: "ExitPlanMode", createdAt: 1 },
+      { sessionId: "s2", toolName: "Bash", createdAt: 2 },
+    ];
+    const filtered = applyMainFilter(perms);
+    assert.strictEqual(filtered.length, 1);
+    assert.strictEqual(filtered[0].toolName, "Bash");
+  });
+
+  it("should filter out AskUserQuestion (elicitation via toolName)", () => {
+    const perms = [
+      { sessionId: "s1", toolName: "AskUserQuestion", createdAt: 1 },
+      { sessionId: "s2", toolName: "Edit", createdAt: 2 },
+    ];
+    const filtered = applyMainFilter(perms);
+    assert.strictEqual(filtered.length, 1);
+    assert.strictEqual(filtered[0].toolName, "Edit");
+  });
+
+  it("should filter out entries with isElicitation flag", () => {
+    const perms = [
+      { sessionId: "s1", toolName: "AskUserQuestion", isElicitation: true, createdAt: 1 },
+      { sessionId: "s2", toolName: "Write", createdAt: 2 },
+    ];
+    const filtered = applyMainFilter(perms);
+    assert.strictEqual(filtered.length, 1);
+    assert.strictEqual(filtered[0].toolName, "Write");
+  });
+
+  it("should filter out codex and kimi notification entries", () => {
+    const perms = [
+      { sessionId: "s1", toolName: "CodexExec", isCodexNotify: true, createdAt: 1 },
+      { sessionId: "s2", toolName: "KimiPermission", isKimiNotify: true, createdAt: 2 },
+      { sessionId: "s3", toolName: "Bash", createdAt: 3 },
+    ];
+    const filtered = applyMainFilter(perms);
+    assert.strictEqual(filtered.length, 1);
+    assert.strictEqual(filtered[0].toolName, "Bash");
+  });
+
+  it("should pass through normal permission tools", () => {
+    const perms = [
+      { sessionId: "s1", toolName: "Bash", createdAt: 1 },
+      { sessionId: "s2", toolName: "Edit", createdAt: 2 },
+      { sessionId: "s3", toolName: "Write", createdAt: 3 },
+    ];
+    const filtered = applyMainFilter(perms);
+    assert.strictEqual(filtered.length, 3);
+  });
+
+  it("should verify filtered perms are not pushed to watch", () => {
+    const fake = makeFakeSidecar();
+    const filteredPerms = applyMainFilter([
+      { sessionId: "s1", toolName: "ExitPlanMode", createdAt: 1 },
+      { sessionId: "s2", toolName: "AskUserQuestion", isElicitation: true, createdAt: 2 },
+      { sessionId: "s3", toolName: "Bash", toolInput: { command: "ls" }, createdAt: 3 },
+    ]);
+    const { adapterOpts } = baseDeps({
+      createSidecar: fake.factory,
+      getPendingPermissions: () => filteredPerms,
+    });
+    live = createWatchAdapter(adapterOpts); live.start();
+    fake.transport.connected = true;
+    live.notifyPermissionsChanged();
+    const approvals = fake.transport.sent.filter((m) => m.type === "approval_request");
+    assert.strictEqual(approvals.length, 1);
+    assert.strictEqual(approvals[0].tool, "Bash");
+  });
+});
+
 describe("watch-adapter theme sync", () => {
   function makeThemeSidecar() {
     let opts = null;
