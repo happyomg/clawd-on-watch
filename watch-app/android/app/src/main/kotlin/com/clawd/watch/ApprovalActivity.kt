@@ -11,12 +11,13 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.view.InputDevice
+import android.view.MotionEvent
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.clawd.watch.data.ApprovalResponse
-import com.clawd.watch.gesture.FlickDetector
 import com.clawd.watch.service.BleService
 
 class ApprovalActivity : AppCompatActivity() {
@@ -25,9 +26,13 @@ class ApprovalActivity : AppCompatActivity() {
     private var bound = false
     private val handler = Handler(Looper.getMainLooper())
     private var responded = false
-    private var flickDetector: FlickDetector? = null
     private var requestId: String? = null
     private var pendingDecision: Pair<String, String>? = null
+
+    private val focusButtons = mutableListOf<Button>()
+    private val focusDecisions = mutableListOf<String>()
+    private var focusIndex = 0
+    private lateinit var vibrator: Vibrator
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -53,6 +58,7 @@ class ApprovalActivity : AppCompatActivity() {
         val tool = intent.getStringExtra("tool") ?: ""
         val risk = intent.getStringExtra("risk") ?: "medium"
 
+        vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
         vibrate(risk)
         setContentView(R.layout.activity_approval)
 
@@ -69,35 +75,20 @@ class ApprovalActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.tool_label).text = "Tool: $tool"
         findViewById<TextView>(R.id.command_text).text = command
 
-        findViewById<Button>(R.id.btn_allow).setOnClickListener {
-            respond("allow-once", "button")
-        }
-        findViewById<Button>(R.id.btn_always).setOnClickListener {
-            respond("allow-always", "button")
-        }
-        findViewById<Button>(R.id.btn_deny).setOnClickListener {
-            respond("deny", "button")
-        }
+        val btnAllow = findViewById<Button>(R.id.btn_allow)
+        val btnAlways = findViewById<Button>(R.id.btn_always)
+        val btnDeny = findViewById<Button>(R.id.btn_deny)
+
+        btnAllow.setOnClickListener { respond("allow-once", "button") }
+        btnAlways.setOnClickListener { respond("allow-always", "button") }
+        btnDeny.setOnClickListener { respond("deny", "button") }
+
+        focusButtons.addAll(listOf(btnAllow, btnAlways, btnDeny))
+        focusDecisions.addAll(listOf("allow-once", "allow-always", "deny"))
+        updateFocus(0)
 
         val gestureHint = findViewById<TextView>(R.id.gesture_hint)
-        val isHighRisk = risk == "high"
-        if (isHighRisk) {
-            gestureHint.text = "High risk: gesture disabled"
-            gestureHint.setTextColor(0x88F44336.toInt())
-        } else {
-            gestureHint.text = "Flick wrist to allow / Shake to deny"
-        }
-
-        flickDetector = FlickDetector(this) { gestureType ->
-            runOnUiThread {
-                val decision = when (gestureType) {
-                    FlickDetector.GestureType.FLICK_APPROVE -> "allow-once"
-                    FlickDetector.GestureType.SHAKE_DENY -> "deny"
-                }
-                respond(decision, "gesture")
-            }
-        }
-        flickDetector?.highRiskLocked = isHighRisk
+        gestureHint.text = "Crown: select · Back: deny"
 
         val timeoutMs = intent.getLongExtra("timeoutMs", 0L)
         val expiresAt = intent.getLongExtra("expiresAt", 0L)
@@ -116,11 +107,9 @@ class ApprovalActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         bindService(Intent(this, BleService::class.java), connection, Context.BIND_AUTO_CREATE)
-        flickDetector?.start()
     }
 
     override fun onStop() {
-        flickDetector?.stop()
         if (!responded) {
             handler.removeCallbacksAndMessages(null)
             respond("deny", "screen-off")
@@ -135,6 +124,33 @@ class ApprovalActivity : AppCompatActivity() {
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
         super.onDestroy()
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onBackPressed() {
+        respond("deny", "back")
+    }
+
+    override fun onGenericMotionEvent(event: MotionEvent): Boolean {
+        if (event.action == MotionEvent.ACTION_SCROLL &&
+            event.isFromSource(InputDevice.SOURCE_ROTARY_ENCODER)) {
+            val delta = event.getAxisValue(MotionEvent.AXIS_SCROLL)
+            val direction = if (delta < 0) 1 else -1
+            updateFocus((focusIndex + direction + focusButtons.size) % focusButtons.size)
+            return true
+        }
+        return super.onGenericMotionEvent(event)
+    }
+
+    private fun updateFocus(newIndex: Int) {
+        focusIndex = newIndex
+        focusButtons.forEachIndexed { i, btn ->
+            btn.alpha = if (i == focusIndex) 1.0f else 0.4f
+            if (i == focusIndex) btn.requestFocus()
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            vibrator.vibrate(VibrationEffect.createOneShot(5, 40))
+        }
     }
 
     private fun respond(decision: String, source: String) {
@@ -155,7 +171,6 @@ class ApprovalActivity : AppCompatActivity() {
         if (responded) return
         responded = true
         bleService?.sendApprovalResponse(ApprovalResponse(id, "deny", "timeout"))
-        val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 100, 50, 100), -1))
         } else {
@@ -167,7 +182,6 @@ class ApprovalActivity : AppCompatActivity() {
     }
 
     private fun vibrate(risk: String) {
-        val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             when (risk) {
                 "high" -> vibrator.vibrate(VibrationEffect.createWaveform(

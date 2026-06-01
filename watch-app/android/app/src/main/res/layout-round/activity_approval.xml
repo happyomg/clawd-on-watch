@@ -74,6 +74,8 @@
                 android:layout_weight="1"
                 android:text="Deny"
                 android:textSize="11sp"
+                android:focusable="true"
+                android:focusableInTouchMode="true"
                 android:layout_marginEnd="4dp" />
 
             <Button
@@ -83,6 +85,8 @@
                 android:layout_weight="1"
                 android:text="Allow"
                 android:textSize="11sp"
+                android:focusable="true"
+                android:focusableInTouchMode="true"
                 android:layout_marginStart="4dp" />
         </LinearLayout>
 
@@ -92,6 +96,8 @@
             android:layout_height="34dp"
             android:text="Always"
             android:textSize="10sp"
+            android:focusable="true"
+            android:focusableInTouchMode="true"
             android:layout_marginTop="4dp" />
 
         <TextView
