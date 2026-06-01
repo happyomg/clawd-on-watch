@@ -1,7 +1,7 @@
 {
-  "name": "clawd-on-desk",
+  "name": "clawd-on-watch",
   "version": "0.8.1",
-  "description": "A desktop pet that reacts to your Claude Code sessions in real-time.",
+  "description": "A desktop pet + Wear OS watch companion that reacts to your AI coding agent sessions in real-time. Forked from clawd-on-desk.",
   "main": "src/main.js",
   "scripts": {
     "start": "node scripts/ensure-sidecar-binaries.js && node launch.js",

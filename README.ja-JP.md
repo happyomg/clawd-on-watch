@@ -1,7 +1,11 @@
 <p align="center">
   <img src="assets/tray-icon.png" width="128" alt="Clawd">
 </p>
-<h1 align="center">Clawd on Desk</h1>
+<h1 align="center">Clawd on Watch</h1>
+<p align="center">
+  <strong>デスクトップペット + Wear OS ウォッチコンパニオン</strong><br>
+  <sub><a href="https://github.com/rullerzhou-afk/clawd-on-desk">clawd-on-desk</a> からフォーク (<a href="https://github.com/rullerzhou-afk">@rullerzhou-afk</a>)</sub>
+</p>
 <p align="center">
   <a href="README.md">English</a>
   ·
@@ -14,86 +18,186 @@
   <a href="README.ja-JP.md">日本語</a>
 </p>
 <p align="center">
-  <a href="https://github.com/rullerzhou-afk/clawd-on-desk/releases"><img src="https://img.shields.io/github/v/release/rullerzhou-afk/clawd-on-desk" alt="Version"></a>
-  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey" alt="Platform">
-</p>
-<p align="center">
-  <a href="https://github.com/rullerzhou-afk/clawd-on-desk/stargazers"><img src="https://img.shields.io/github/stars/rullerzhou-afk/clawd-on-desk?style=flat&logo=github&color=yellow" alt="Stars"></a>
-  <a href="https://github.com/hesreallyhim/awesome-claude-code"><img src="https://awesome.re/mentioned-badge-flat.svg" alt="Mentioned in Awesome Claude Code"></a>
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Wear%20OS-lightgrey" alt="Platform">
 </p>
 
 <p align="center">
-  <img src="assets/hero.gif" alt="Clawd on Desk のアニメーションデモ。AI コーディングエージェントの状態に合わせて、ピクセルのカニが睡眠、思考、ツール実行中のタイピング、サブエージェント 1 個ではヘッドホングルーヴ、複数では3ボールジャグリング、権限リクエストの通知、タスク完了後のお祝いへリアルタイムに切り替わります。Claude Code、Codex、Cursor、Copilot、Gemini、Antigravity、Qwen、Pi、OpenClaw などに対応しています。">
+  <img src="assets/hero.gif" width="360" alt="Clawd on Desk — AI コーディングエージェントにリアルタイムで反応するピクセルデスクトップペット">
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="assets/watch/watch-working.png" width="160" alt="Clawd on Watch — Connected ステータスと working 状態チップを表示する Wear OS コンパニオン">
 </p>
 
-Clawd はデスクトップに住むペットで、AI コーディングエージェントが今何をしているかにリアルタイムで反応します。長いタスクを開始したら席を外し、Clawd が完了を知らせたら戻ってくるだけです。
+## Clawd on Watch とは？
 
-プロンプトを入力すると考え、ツールが動くとタイピングし、サブエージェントが動くとヘッドホングルーヴや3ボールジャグリングになり、権限確認ではカードを表示し、タスク完了時には喜び、離席中は眠ります。組み込みテーマとして **Clawd**（ピクセルのカニ）、**Calico**（三毛猫）、**Cloudling**（云宝）を同梱し、カスタムテーマと Codex Pet アニメーションパックのインポートにも対応しています。
+**Clawd on Watch** は [clawd-on-desk](https://github.com/rullerzhou-afk/clawd-on-desk) デスクトップペットを **Wear OS スマートウォッチコンパニオン** で拡張したプロジェクトです。ピクセルのカニはデスクトップと手首の両方に住んでいます。AI コーディングエージェントが思考、タイピング、サブエージェントの切り替えを始めると、ウォッチは Bluetooth Low Energy (BLE) を介してリアルタイムに状態を反映します。
 
-> Windows 11、macOS、Ubuntu/Linux に対応しています。Windows リリースでは x64 と ARM64 のインストーラーを個別に提供します。ソースから実行するには Node.js が必要です。**Claude Code**、**Codex CLI**、**Copilot CLI**、**Gemini CLI**、**Antigravity CLI (agy)**、**Cursor Agent**、**CodeBuddy**、**Kiro CLI**、**Kimi Code CLI (Kimi-CLI)**、**Qwen Code**、**opencode**、**Pi**、**OpenClaw**、**Hermes Agent** と連携します。
+デスクを離れても手首をちらっと見るだけで、エージェントがまだ作業中なのか、権限待ちなのか、完了したのかが即座にわかります。エージェントがリスクのあるコマンドを実行しようとすると、ウォッチが振動し、**手首のフリックで承認・拒否** が可能です。ターミナルに急いで戻る必要はありません。
 
-## 機能
+> デスクトップ側はアップストリーム clawd-on-desk のすべての機能を保持しています: 14 種類のアニメーション状態、権限バブル、セッションダッシュボード、カスタムテーマ、マルチディスプレイ対応、**Claude Code**、**Codex CLI**、**Copilot CLI**、**Gemini CLI**、**Cursor Agent** [その他多数](#デスクトップ機能) との連携。
 
-### マルチエージェント対応
-- **Claude Code** — command hook と HTTP permission hook による完全統合
-- **Codex CLI** — official hooks を主経路にし、JSONL フォールバック（`~/.codex/sessions/`）も利用。自動登録され、実際の権限バブルに対応
-- **Copilot CLI** — `~/.copilot/hooks/hooks.json` の command hook に対応
-- **Gemini CLI** — `~/.gemini/settings.json` の command hook に対応（Clawd 起動時に自動登録、または `npm run install:gemini-hooks`）
-- **Antigravity CLI (agy)** — `~/.gemini/config/hooks.json` の command hook に対応（Antigravity config がある場合は Clawd 起動時に自動登録、または `npm run install:antigravity-hooks`）。**state-only** のため、Clawd は agy の権限バブルを表示しません。Allow / Deny / Always-allow は agy 自身のターミナルメニューで選択します
-- **Cursor Agent** — `~/.cursor/hooks.json` の [Cursor IDE hooks](https://cursor.com/docs/agent/hooks) に対応（Clawd 起動時に自動登録、または `npm run install:cursor-hooks`）
-- **CodeBuddy** — `~/.codebuddy/settings.json` 経由で Claude Code 互換の command hook と HTTP permission hook に対応（Clawd 起動時に自動登録、または `node hooks/codebuddy-install.js`）
-- **Kiro CLI** — `~/.kiro/agents/` 配下のカスタムエージェント設定に command hook を注入。Clawd 起動時には Kiro 組み込みの `kiro_default` から再同期される `clawd` エージェントも自動作成されるため、`kiro-cli --agent clawd` または `/agent swap clawd` で挙動差を抑えながら hook を利用できます（Clawd 起動時に自動登録、または `npm run install:kiro-hooks`）。state hook は macOS と Windows で検証済みです。
-- **Kimi Code CLI (Kimi-CLI)** — `~/.kimi/config.toml` の command hook（`[[hooks]]` エントリ）に対応（Clawd 起動時に自動登録、または `npm run install:kimi-hooks`）
-- **Qwen Code** — `~/.qwen/settings.json` の command hook に対応（Clawd 起動時に自動登録、または `npm run install:qwen-hooks`）。状態追跡と Qwen `PermissionRequest` のデスクトップ権限バブルに対応します
-- **opencode** — `~/.config/opencode/opencode.json` 経由の [plugin integration](https://opencode.ai/docs/plugins) に対応（Clawd 起動時に自動登録）。遅延のないイベントストリーミング、Allow/Always/Deny 付きの権限バブル、`task` tool による並列サブエージェント生成時の building アニメーションに対応
-- **Pi** — `~/.pi/agent/extensions/clawd-on-desk` のグローバル extension で連携します（Clawd 起動時に自動登録、または `npm run install:pi-extension`）。インタラクティブな Pi セッションのライフサイクルとツール活動だけを状態同期し、Pi のデフォルト YOLO 動作を維持します
-- **OpenClaw** — `~/.openclaw/openclaw.json` の plugin path で state-only 連携します（OpenClaw config が既にある場合は Clawd 起動時に自動登録、または `npm run install:openclaw-plugin`）。Phase 1 はローカル `openclaw tui --local` セッションのアニメーションのみを対象とし、権限バブルやターミナルフォーカスには対応しません
-- **Hermes Agent** — Hermes の管理 plugin ディレクトリ経由の [plugin integration](https://hermes-agent.org/)（Hermes インストール済みの場合は Clawd 起動時に自動登録、または `npm run install:hermes-plugin`）。状態、セッション、SessionEnd、ターミナルフォーカスに対応
-- **複数エージェントの共存** — すべてのエージェントを同時に動かせます。Clawd は各セッションを個別に追跡します
+---
 
-### アニメーションと操作
-- **リアルタイムな状態認識** — agent hook とログポーリングが Clawd のアニメーションを自動で切り替えます
-- **12 種類のアニメーション状態** — idle、thinking、typing、building、headphones groove、multi-subagent juggling、error、happy、notification、sweeping、carrying、sleeping
-- **Codex Pet インポート** — `Settings...` → `Theme` から Codex Pet zip パッケージをインポートすると、Clawd が atlas アニメーションを管理テーマに変換します
-- **視線追従** — idle 状態では Clawd がカーソルを追い、体の傾きや影の伸びも変化します
-- **睡眠シーケンス** — 60 秒アイドルが続くと、あくび、うとうと、倒れ込み、睡眠へ移行します。マウス移動で驚いて起きるアニメーションが再生されます
-- **クリックリアクション** — ダブルクリックでつつき、4 回クリックでじたばたします
-- **どの状態からでもドラッグ** — いつでも Clawd をつかめます（Pointer Capture により素早いフリックでも取り落としません）。離すと元の状態へ戻ります
-- **Mini mode** — 右端へドラッグ、または右クリックの「Mini Mode」で有効化。Clawd が画面端に隠れ、ホバーで顔を出し、mini 通知やお祝い、放物線ジャンプの遷移を行います
+## ウォッチコンパニオン
 
-### 権限バブル
-- **アプリ内権限レビュー** — Claude Code、Codex CLI、CodeBuddy、opencode がツール権限を要求すると、ターミナルで待つ代わりに Clawd がフローティングバブルカードを表示します
-- **許可 / 拒否 / エージェント固有の追加操作** — ワンクリックで承認または拒否できます。対応エージェントでは permission rule や `Always` 操作も利用できます
-- **グローバルホットキー** — 最新の権限バブルに対して `Ctrl+Shift+Y` で許可、`Ctrl+Shift+N` で拒否（バブル表示中だけ登録されます）
-- **スタックレイアウト** — 複数の権限リクエストは右下から上方向へ積み重なります
-- **自動消去** — 先にターミナルで回答した場合、バブルは自動的に消えます
-- **エージェントごとの切り替え** — `Settings...` → `Agents` でエージェントを選び、`Show pop-up bubbles` をオフにすると、そのエージェント自身のターミナル/TUI に確認を残せます
+### 仕組み
 
-### セッション情報
-- **マルチセッション追跡** — すべてのエージェントのセッションから、優先度の最も高い状態を解決します
-- **サブエージェント認識** — サブエージェント 1 個で headphones groove、2 個以上で three-ball juggling
-- **Sessions dashboard + HUD** — 右クリックまたは tray → `Open Dashboard` から live session、最近のイベント、エイリアス、ターミナルジャンプを確認できます。Clawd の近くにはコンパクトな HUD が表示され、現在の live session を見失いません
-- **ターミナルフォーカス** — Dashboard/HUD の操作で特定セッションのターミナルへジャンプできます。notification/attention 状態では関連するターミナルを自動で前面にします
-- **プロセス生存確認** — 対応エージェントのプロセスがクラッシュまたは終了したことを検知し、孤立セッションを片付けます
-- **起動時リカバリー** — Clawd の再起動時に対応エージェントがまだ動いていれば、眠らずに起きたままになります
+```
+Desktop (Electron)                Watch (Wear OS / Kotlin)
+  src/main.js                       watch-app/android/
+  src/watch-adapter.js              service/BleService.kt
+  src/watch-controller.js           renderer/PetView.kt
+       │                            domain/ThemeReceiver.kt
+       │ stdio JSON
+       ▼
+  scripts/watch_buddy_bridge.py     (BLE Central, Python bleak)
+       │
+       │ GATT over BLE
+       ▼
+  ┌─────────────────────────────────────────────────────┐
+  │  CWD1: State + Theme frames     Desktop → Watch     │
+  │  CWD2: Approval Request         Desktop → Watch     │
+  │  CWD3: Approval Response        Watch → Desktop     │
+  │  CWD4: Meta + themeHash         Watch → Desktop     │
+  └─────────────────────────────────────────────────────┘
+```
 
-### システム
-- **クリック透過** — 透明部分のクリックは背面ウィンドウへ通り、Clawd の体だけが操作対象になります
-- **位置の記憶** — 再起動後も最後に置いた場所を覚えます（mini mode を含む）
-- **単一インスタンスロック** — Clawd ウィンドウの重複起動を防ぎます
-- **自動起動** — Claude Code の SessionStart hook により、Clawd が起動していない場合に自動で起動できます
-- **Do Not Disturb** — 右クリックまたは tray メニューから sleep mode に入り、起こすまで hook event をすべて抑制します。DND 中は権限バブルも抑制されます。Codex と opencode はネイティブプロンプトに戻り、Claude Code と CodeBuddy は組み込みの権限フローに戻ります。Antigravity と Pi は state-only です
-- **効果音** — タスク完了や権限リクエスト時に短い音を鳴らします（右クリックメニューで切り替え、10 秒クールダウン、DND 中は自動ミュート）
-- **システムトレイ** — サイズ変更（S/M/L）、DND mode、言語切り替え、自動起動、更新確認
-- **i18n** — English、簡体中文、繁体中文、Korean、Japanese UI。右クリックメニューまたは tray から切り替えできます
-- **自動更新** — GitHub Releases を確認します。Windows では終了時に NSIS 更新を適用し、macOS/Linux では clone したリポジトリから実行している場合に `git pull` + restart を行います
+デスクトップは Python サイドカー (`watch_buddy_bridge.py`) を起動し、BLE Central として動作します。ウォッチは BLE Peripheral (GATT Server) として動作します。状態スナップショット、テーマデータ、権限リクエストはカスタム GATT 特性を介してやり取りされます。
 
-## アニメーション
+### ウォッチ機能
+
+#### リアルタイム状態同期
+ウォッチは BLE を介してデスクトップペットの状態をミラーリングし、14 種類のアニメーションを表示します: idle、thinking、typing、building、headphones groove (サブエージェント 1 個)、juggling (2 個以上)、error、happy、notification、sweeping、carrying、sleeping など。画面下部のカラーコードチップが現在の状態を示します。状態が切り替わるたびに短い触覚振動が発生します。
+
+#### BLE 経由のテーマ同期
+カスタムテーマはデスクトップからウォッチへ自動的にプッシュされます。SVG アニメーションファイルはチャンク分割されて BLE 経由で転送され、デバイス上で非表示の WebView が CSS アニメーションをフレームごとにキャプチャし、キャッシュされた WebP シーケンスとしてレンダリングします。ウォッチは SHA-256 フィンガープリントで古いテーマを検出し、必要な場合のみ同期を行います。
+
+#### 手首からの権限承認
+AI エージェントがツールやコマンドの実行権限をリクエストすると、ウォッチはリスクレベルに応じた触覚パターンで振動します:
+- **高リスク**: トリプルパルス、ジェスチャー無効 — ボタン操作のみ
+- **中リスク**: ダブルパルス
+- **低リスク**: ショートパルス
+
+3 つの入力方法:
+1. **ボタン**: Deny / Allow / Always Allow
+2. **手首フリック**: フリックで承認、シェイクで拒否 (高リスク時は無効)
+3. **タイムアウト**: 画面オフまたはタイマー切れで自動拒否
+
+#### 自動再接続と電力管理
+BLE 接続は切断から自動的に復旧し、プログレッシブなリトライ遅延で再接続します。30 秒のウォッチドッグが Central の無音消失を検出します。画面オフ時にはアニメーションとジェスチャー検出を一時停止してバッテリーを節約します。
+
+### ウォッチデモ
+
+<p align="center">
+  <img src="assets/watch/watch-working.png" width="200" alt="Connected ステータスでカニがタイピング中 — working 状態のウォッチ">
+  <br>
+  <sub>Wear OS ウォッチ上の Clawd — エージェント作業中にカニがタイピングする「Connected」状態</sub>
+</p>
+
+### セットアップガイド
+
+#### 前提条件
+
+| コンポーネント | 要件 |
+|-------------|------|
+| ウォッチ | BLE 対応の Wear OS デバイス |
+| デスクトップ | macOS (検証済み)、Windows/Linux (実験的) |
+| Python | Python 3.8+ と `bleak` ライブラリ |
+| Android SDK | compileSdk 34, JDK 17 |
+
+#### 1. デスクトップ: ウォッチモードの有効化
+
+1. Clawd を起動し、**設定** を開きます（右クリックメニューまたはトレイメニュー）
+2. **リモート承認** タブに移動します（サイドバーの飛行機アイコン）
+3. **Watch** カードを展開します
+4. **"Enable"** トグルをオンにします — バックグラウンドで BLE ブリッジサイドカーが起動します
+5. **"Scan"** をクリックします — 近くの Wear OS デバイスがリストに表示されます
+6. ウォッチをクリックします — デスクトップが自動的に接続します
+7. 接続が完了すると、ステータスが **"Connected: \<デバイス名\>"** と表示されます
+8. オプション: **"Approval on Watch"** トグルをオンにして、ツール権限リクエストをウォッチに転送します
+
+> ブリッジが `missing_bleak` エラーを報告した場合、エラーヒントの **"Install bleak"** ボタンをクリックすると自動インストールされます。
+
+**リピーターの方へ**: 以前接続したことがある場合、デバイスアドレスは保存されています。有効化後 **"Reconnect"** をクリックするだけでスキャンなしで接続できます。
+
+<details>
+<summary>上級者向け: 環境変数オーバーライド（開発/CI 用）</summary>
+
+```bash
+export CLAWD_WATCH_ENABLED=1                      # 強制有効化（設定を上書き）
+export CLAWD_WATCH_ADDRESS="<BLEアドレス>"           # BLE アドレス (macOS UUID 形式)
+export CLAWD_WATCH_NAME_PREFIX="Clawd"             # スキャン名プレフィックス
+export CLAWD_WATCH_PYTHON="python3"                # Python 実行ファイル
+```
+
+</details>
+
+#### 2. ウォッチ: ビルドとインストール
+
+```bash
+cd watch-app/android
+
+# 環境の設定
+export ANDROID_HOME=~/Library/Android/sdk
+export JAVA_HOME=/path/to/jdk17   # JDK 17 が必要 (Gradle 8.2)
+
+# ビルド
+./gradlew assembleDebug
+
+# ウォッチにインストール (ADB で接続)
+adb install -r -d app/build/outputs/apk/debug/app-debug.apk
+```
+
+#### 3. ペアリングと接続
+
+1. ウォッチアプリを起動します — ペアリングモードに入り、BLE アドバタイジングが開始されます
+2. デスクトップアプリを `CLAWD_WATCH_ENABLED=1` で起動します
+3. デスクトップが "Clawd" プレフィックスを持つ近くの BLE ペリフェラルをスキャンします
+4. 接続が確立されると、ウォッチに "Connected" が表示され、ペットの状態同期が始まります
+5. デスクトップにカスタムテーマがある場合、初回接続時に自動的にウォッチへ同期されます
+
+#### 4. 動作確認
+
+```bash
+# ウォッチログ
+adb logcat -s PetView FrameRecorder ThemeConfig BleService
+
+# 確認するログ:
+# BleService: Central connected
+# ThemeReceiver: assembled: clawd (8399a0)
+# PetView: setState → WORKING
+```
+
+---
+
+## デスクトップ機能
+
+> アップストリーム [clawd-on-desk](https://github.com/rullerzhou-afk/clawd-on-desk) のすべての機能を含んでいます。以下はその概要です。
+
+### エージェント連携
+
+| エージェント | 連携方式 | 権限バブル |
+|------------|---------|-----------|
+| Claude Code | Command hook + HTTP permission hook | あり |
+| Codex CLI | Official hooks + JSONL フォールバック | あり |
+| Copilot CLI | Command hook | なし |
+| Gemini CLI | Command hook (自動登録) | なし |
+| Cursor Agent | IDE hooks (自動登録) | なし |
+| Antigravity CLI | Command hook (状態のみ) | なし |
+| CodeBuddy | Command hook + HTTP permission hook | あり |
+| Kiro CLI | カスタムエージェント設定 | なし |
+| Kimi Code CLI | Command hook (TOML 経由) | なし |
+| Qwen Code | Command hook + 権限リクエスト | あり |
+| opencode | プラグイン連携 | あり |
+| Pi | グローバルエクステンション (状態のみ) | なし |
+| OpenClaw | プラグイン連携 (状態のみ) | なし |
+| Hermes Agent | プラグイン連携 | なし |
+
+### アニメーション
 
 <table>
   <tr>
     <td align="center"><img src="assets/gif/clawd-idle.gif" width="100"><br><sub>Idle</sub></td>
-    <td align="center"><img src="assets/gif/clawd-thinking.gif" width="100"><br><sub>Thought Bubble</sub></td>
+    <td align="center"><img src="assets/gif/clawd-thinking.gif" width="100"><br><sub>Thinking</sub></td>
     <td align="center"><img src="assets/gif/clawd-typing.gif" width="100"><br><sub>Typing</sub></td>
     <td align="center"><img src="assets/gif/clawd-building.gif" width="100"><br><sub>Building</sub></td>
     <td align="center"><img src="assets/gif/clawd-headphones-groove.gif" width="100"><br><sub>1 Subagent</sub></td>
@@ -117,89 +221,59 @@ Clawd はデスクトップに住むペットで、AI コーディングエー�
   </tr>
 </table>
 
-event-to-state mapping、mini mode、クリックリアクションの詳細: **[docs/guides/state-mapping.md](docs/guides/state-mapping.md)**
+### その他のデスクトップ機能
 
-## マルチディスプレイ
+- **権限バブル** — Allow / Deny / Always Allow のフローティングカードによるアプリ内権限レビュー、グローバルホットキー (`Ctrl+Shift+Y` / `Ctrl+Shift+N`) 対応
+- **セッションダッシュボード + HUD** — ライブセッション、最近のイベントの確認とターミナルへのジャンプ
+- **カスタムテーマ** — SVG/GIF/APNG アセットで独自キャラクターを作成、または Codex Pet zip パッケージをインポート
+- **マルチディスプレイ** — 比例サイズ調整、縦長モニターブースト、ディスプレイ間ドラッグ
+- **Mini モード** — 画面端に隠れ、ホバーで顔を出す
+- **視線追従** — idle 状態で Clawd がカーソルを追跡
+- **多言語対応** — English、簡体中文、繁体中文、Korean、Japanese
+- **自動更新** — GitHub Releases で新バージョンを確認
 
-Clawd はマルチモニター環境に適応します。起動したディスプレイに合わせて比例サイズを決め、縦長モニターでは読みやすさを保つために上限付きで拡大し、ディスプレイ間のドラッグにも対応します。
+詳細ドキュメント: **[docs/guides/state-mapping.md](docs/guides/state-mapping.md)** | **[docs/guides/setup-guide.md](docs/guides/setup-guide.md)** | **[docs/guides/known-limitations.md](docs/guides/known-limitations.md)**
 
-<p align="center"><sub>実際のマルチモニター挙動は、<a href="assets/videos/clawd-multi-monitor-demo.mp4">このリポジトリ内のデモ動画</a>で確認できます。</sub></p>
-
-## クイックスタート
-
-通常利用では、**[GitHub Releases](https://github.com/rullerzhou-afk/clawd-on-desk/releases/latest)** から最新のビルド済みインストーラーをダウンロードしてください。
-
-- **Windows**: `Clawd-on-Desk-Setup-<version>-x64.exe` または `Clawd-on-Desk-Setup-<version>-arm64.exe`
-- **macOS**: `.dmg`
-- **Linux**: `.AppImage` または `.deb`
-
-インストール後に Clawd を起動してください。対応エージェントの hook/plugin は起動時に自動同期されます。
-
-ソースからの実行は、コントリビュート、未リリースコードのテスト、または連携のデバッグを行う場合だけを推奨します。ソースインストールでは Electron/build tooling をダウンロードし、大きな `node_modules` ツリーが作成されることがあります。
+### クイックスタート (デスクトップのみ)
 
 ```bash
-# リポジトリを clone
-git clone https://github.com/rullerzhou-afk/clawd-on-desk.git
-cd clawd-on-desk
-
-# 依存関係をインストール
+git clone https://github.com/happyomg/clawd-on-watch.git
+cd clawd-on-watch
 npm install
-
-# Clawd を起動（起動時に Claude Code hooks を自動登録）
 npm start
 ```
 
-**Claude Code**、**Codex CLI**、**Copilot CLI** は自動登録される hook により、そのまま動作します。**Gemini CLI**、**Antigravity CLI (agy)**、**Cursor Agent**、**CodeBuddy**、**Kiro CLI**、**Kimi Code CLI (Kimi-CLI)**、**Qwen Code**、**opencode**、**Pi**、**OpenClaw**、**Hermes Agent** は、インストール済みかつ初期化済みであれば Clawd 起動時に自動登録されます。Remote SSH、WSL、macOS/Linux のプラットフォーム別メモも含めた詳細: **[docs/guides/setup-guide.md](docs/guides/setup-guide.md)**
+---
 
-リモートサーバーで Claude Code / Codex CLI を動かし、状態と権限バブルをローカル Clawd に転送したい場合は、アプリ内の **Settings → Remote SSH → One-click deploy** を使います。完全な手順、Doctor の境界、FAQ はこちら: **[docs/guides/guide-remote-ssh.md](docs/guides/guide-remote-ssh.md)**
+## フォーク履歴
 
-公式の `Codex + WSL` ステータス、Clawd の現在の実装境界、そして誤解しやすい理由については、こちらを参照してください: **[docs/guides/codex-wsl-clarification.md](docs/guides/codex-wsl-clarification.md)**
+このプロジェクトは [@rullerzhou-afk](https://github.com/rullerzhou-afk) (鹿鹿) による [**clawd-on-desk**](https://github.com/rullerzhou-afk/clawd-on-desk) からフォークしたものです。アップストリームプロジェクトは、AI コーディングエージェントにリアルタイムで反応するコミュニティ主導の Electron デスクトップペットです。
 
-## 既知の制限
+**追加した内容:**
+- Wear OS コンパニオンアプリ (`watch-app/android/`) — BLE ペリフェラル、SVG アニメーションレンダリング、手首ジェスチャー認識を備えた Kotlin 実装
+- Python BLE ブリッジ (`scripts/watch_buddy_bridge.py`) — asyncio + bleak による macOS/Windows/Linux Central 接続
+- デスクトップウォッチアダプター (`src/watch-adapter.js`, `src/watch-controller.js`, `src/watch-sidecar-client.js`) — サイドカーライフサイクル、状態プッシュ、テーマ同期、権限リレーのオーケストレーション
+- テーマ転送プロトコル — SHA-256 フィンガープリントによる増分同期を備えた、チャンク分割 SVG-over-BLE
 
-一部のエージェントには機能差があります（権限バブルなし、ポーリング遅延、ターミナルフォーカスなしなど）。完全な表はこちら: **[docs/guides/known-limitations.md](docs/guides/known-limitations.md)**
+### アップストリームとの同期
 
-## カスタムテーマ
+`upstream` リモートはすでに設定されています。オリジナルの clawd-on-desk から新機能や修正を取り込むには:
 
-Clawd はカスタムテーマに対応しています。標準のカニを、自分のキャラクターやアニメーションに置き換えられます。既存の Codex Pet パッケージがある場合は、`Settings...` → `Theme` → `Import pet zip` から取り込むと、Clawd が atlas を管理テーマへ自動変換します。
-
-**クイックスタート:**
-1. テーマを scaffold します。
-   ```bash
-   node scripts/create-theme.js my-theme
-   # または
-   npm run create-theme -- my-theme
-   ```
-   引数なしでも動作します。ユーザーテーマディレクトリ内に、次に利用可能な `my-theme` scaffold を作成します。
-2. `theme.json` を編集し、アセット（SVG、GIF、APNG、WebP、PNG、JPG、JPEG）を作成します
-3. Clawd を再起動するか、`Settings...` → `Theme` → 自分のテーマを選択します
-
-**最小構成のテーマ:** SVG 1 個（視線追従付き idle）+ GIF/APNG 7 個（thinking、working、error、happy、notification、sleeping、waking）。視線追従を無効にすれば、すべての状態で任意の形式を利用できます。
-
-配布前にテーマを検証してください。
 ```bash
-node scripts/validate-theme.js path/to/your-theme
+git fetch upstream
+git checkout main
+git merge upstream/main
+# コンフリクトがあれば解決してから:
+git push origin main
 ```
 
-`Settings...` → `Theme` のテーマカードには、`Tracked idle`、`Static theme`、`Mini`、`Direct sleep`、`No reactions` などの capability badge が表示されるため、ユーザーは切り替える前にテーマの対応範囲を確認できます。
-
-初心者から上級者までの段階別パス、`theme.json` のフィールドリファレンス、アセットガイドラインを含む完全な作成ガイドは [docs/guides/guide-theme-creation.md](docs/guides/guide-theme-creation.md) を参照してください。
-
-> サードパーティ製 SVG ファイルは、セキュリティのため自動で sanitize されます。
-
-### Roadmap
-
-今後検討したい項目です。
-
-- `codex.exe` PID からのプロセスツリー lookup による Codex ターミナルフォーカス
-- テーマレジストリとアプリ内ダウンロード
-- アプリのクリーン削除用 hook uninstall script
+**コンフリクト発生箇所**: `README*.md`、`package.json`、`src/main.js`（ウォッチアダプターの初期化コードがここにあります）。ウォッチ専用ファイル（`watch-app/`、`scripts/watch_buddy_bridge.py`、`src/watch-*.js`）はアップストリームに存在しないため、コンフリクトしません。
 
 ## コントリビュート
 
-Clawd on Desk はコミュニティ主導のプロジェクトです。バグ報告、機能案、Pull Request を歓迎します。相談したい場合は [issue](https://github.com/rullerzhou-afk/clawd-on-desk/issues) を開くか、直接 PR を送ってください。
+バグ報告、機能アイデア、Pull Request を歓迎します。[issue](https://github.com/happyomg/clawd-on-watch/issues) を開くか、直接 PR を送ってください。
 
-### メンテナー
+### アップストリームメンテナー
 
 <table>
   <tr>
@@ -210,7 +284,7 @@ Clawd on Desk はコミュニティ主導のプロジェクトです。バグ報
 
 ### コントリビューター
 
-Clawd をより良くしてくれたすべての方に感謝します。
+Clawd をより良くしてくれたすべての方に感謝します:
 
 <details>
 <summary>コントリビューター 50 人をすべて表示</summary>
@@ -288,6 +362,7 @@ Clawd をより良くしてくれたすべての方に感謝します。
 
 ## 謝辞
 
+- アップストリームプロジェクト [clawd-on-desk](https://github.com/rullerzhou-afk/clawd-on-desk) — [@rullerzhou-afk](https://github.com/rullerzhou-afk) (鹿鹿)
 - Clawd のピクセルアートは [@marciogranzotto](https://github.com/marciogranzotto) による [clawd-tank](https://github.com/marciogranzotto/clawd-tank) を参考にしています
 - [LINUX DO](https://linux.do/) コミュニティで共有されました
 
@@ -295,9 +370,11 @@ Clawd をより良くしてくれたすべての方に感謝します。
 
 ソースコードは [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0) のもとでライセンスされています。
 
-**Artwork および同梱テーマアセット（`assets/` と `themes/*/assets/` を含む）は AGPL-3.0 の対象外です。** すべての権利は各著作権者に帰属します。詳細は [assets/LICENSE](assets/LICENSE) と以下の注記を参照してください。
+**Artwork および同梱テーマアセット (`assets/` と `themes/*/assets/` を含む) は AGPL-3.0 の対象外です。** すべての権利は各著作権者に帰属します。詳細は [assets/LICENSE](assets/LICENSE) と以下の注記を参照してください。
 
 - **Clawd** キャラクターは [Anthropic](https://www.anthropic.com) の所有物です。このプロジェクトは非公式のファンプロジェクトであり、Anthropic との提携または承認を受けたものではありません。
 - **Calico cat (三毛猫)** のアートワークは 鹿鹿 ([@rullerzhou-afk](https://github.com/rullerzhou-afk)) によるものです。All rights reserved.
 - **Cloudling (云宝)** のアートワークは 鹿鹿 ([@rullerzhou-afk](https://github.com/rullerzhou-afk)) によるものです。All rights reserved. Cloudling のビジュアル方針には OpenAI Codex ロゴへのオマージュが含まれています。Codex/OpenAI の標章は OpenAI に帰属し、このプロジェクトは OpenAI との提携または承認を受けたものではありません。
 - **サードパーティのコントリビューション**: 著作権は各アーティストに帰属します。
+
+**暗号資産との関係はありません。** このプロジェクトにはトークン、コイン、NFT、エアドロップはなく、いかなる暗号資産プロジェクトとも関係ありません。

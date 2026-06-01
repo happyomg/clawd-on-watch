@@ -1,7 +1,11 @@
 <p align="center">
   <img src="assets/tray-icon.png" width="128" alt="Clawd">
 </p>
-<h1 align="center">Clawd on Desk</h1>
+<h1 align="center">Clawd on Watch</h1>
+<p align="center">
+  <strong>Desktop Pet + Wear OS Companion</strong><br>
+  <sub>Forked from <a href="https://github.com/rullerzhou-afk/clawd-on-desk">clawd-on-desk</a> by <a href="https://github.com/rullerzhou-afk">@rullerzhou-afk</a></sub>
+</p>
 <p align="center">
   <a href="README.zh-CN.md">中文版</a>
   ·
@@ -12,89 +16,186 @@
   <a href="README.ja-JP.md">日本語</a>
 </p>
 <p align="center">
-  <sub>🌏 Don't see your language? <a href="https://github.com/rullerzhou-afk/clawd-on-desk/pulls">Open a PR</a> to add one — Español, Français, Deutsch, etc. all welcome.</sub>
-</p>
-<p align="center">
-  <a href="https://github.com/rullerzhou-afk/clawd-on-desk/releases"><img src="https://img.shields.io/github/v/release/rullerzhou-afk/clawd-on-desk" alt="Version"></a>
-  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey" alt="Platform">
-</p>
-<p align="center">
-  <a href="https://github.com/rullerzhou-afk/clawd-on-desk/stargazers"><img src="https://img.shields.io/github/stars/rullerzhou-afk/clawd-on-desk?style=flat&logo=github&color=yellow" alt="Stars"></a>
-  <a href="https://github.com/hesreallyhim/awesome-claude-code"><img src="https://awesome.re/mentioned-badge-flat.svg" alt="Mentioned in Awesome Claude Code"></a>
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Wear%20OS-lightgrey" alt="Platform">
 </p>
 
 <p align="center">
-  <img src="assets/hero.gif" alt="Clawd on Desk — a pixel desktop pet that reacts to your AI coding agent in real time. Animated demo: the crab cycles through sleeping, thinking while the model reads the codebase, typing as edit/bash tools run, grooving for one subagent, juggling when multiple subagents run, raising a permission bubble, and celebrating when 14 files / 312 tests are complete. Works with Claude Code, Codex, Cursor, Copilot, Gemini, Antigravity, Qwen, Pi, OpenClaw and more.">
+  <img src="assets/hero.gif" width="360" alt="Clawd on Desk — pixel desktop pet reacting to AI coding agents in real time">
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="assets/watch/watch-working.png" width="160" alt="Clawd on Watch — Wear OS companion showing the crab typing with Connected status and working state chip">
 </p>
 
-Clawd lives on your desktop and reacts to what your AI coding agent is doing — in real time. Start a long task, walk away, come back when the crab tells you it's done.
+## What is Clawd on Watch?
 
-Thinking when you prompt, typing when tools run, grooving or juggling for subagents, reviewing permissions, celebrating when tasks complete, sleeping when you step away. Ships with three built-in themes: **Clawd** (pixel crab), **Calico** (三花猫), and **Cloudling** (云宝), with full support for custom themes and imported Codex Pet animation packs.
+**Clawd on Watch** extends the [clawd-on-desk](https://github.com/rullerzhou-afk/clawd-on-desk) desktop pet with a **Wear OS smartwatch companion**. The pixel crab lives on both your desktop and your wrist — when your AI coding agent starts thinking, typing, or juggling subagents, the watch mirrors the state in real time over Bluetooth Low Energy (BLE).
 
-> Supports Windows 11, macOS, and Ubuntu/Linux. Windows releases provide separate x64 and ARM64 installers. Source builds require Node.js. Works with **Claude Code**, **Codex CLI**, **Copilot CLI**, **Gemini CLI**, **Antigravity CLI (agy)**, **Cursor Agent**, **CodeBuddy**, **Kiro CLI**, **Kimi Code CLI (Kimi-CLI)**, **Qwen Code**, **opencode**, **Pi**, **OpenClaw**, and **Hermes Agent**.
+Walk away from your desk, glance at your wrist, and know instantly whether your agent is still working, waiting for permission, or done. When the agent needs to run a risky command, the watch vibrates and lets you **approve or deny with a wrist flick** — no need to rush back to the terminal.
 
-## Features
+> The desktop side retains all features from upstream clawd-on-desk: 14 animated states, permission bubbles, session dashboards, custom themes, multi-display support, and integrations with **Claude Code**, **Codex CLI**, **Copilot CLI**, **Gemini CLI**, **Cursor Agent**, and [many more](#desktop-features).
 
-### Multi-Agent Support
-- **Claude Code** — full integration via command hooks + HTTP permission hooks
-- **Codex CLI** — official hooks with JSONL fallback (`~/.codex/sessions/`), registered automatically with real permission bubbles
-- **Copilot CLI** — command hooks via `~/.copilot/hooks/hooks.json`
-- **Gemini CLI** — command hooks via `~/.gemini/settings.json` (registered automatically when Clawd starts, or run `npm run install:gemini-hooks`)
-- **Antigravity CLI (agy)** — command hooks via `~/.gemini/config/hooks.json` (registered automatically when Antigravity config exists, or run `npm run install:antigravity-hooks`); **state-only**: Clawd never pops a permission bubble for agy. Every Allow / Deny / Always-allow choice happens in agy's own terminal menu
-- **Cursor Agent** — [Cursor IDE hooks](https://cursor.com/docs/agent/hooks) in `~/.cursor/hooks.json` (registered automatically when Clawd starts, or run `npm run install:cursor-hooks`)
-- **CodeBuddy** — Claude Code-compatible command hooks + HTTP permission hooks via `~/.codebuddy/settings.json` (registered automatically when Clawd starts, or run `node hooks/codebuddy-install.js`)
-- **Kiro CLI** — command hooks injected into custom agent configs under `~/.kiro/agents/`, plus an auto-created `clawd` agent that is re-synced from Kiro's built-in `kiro_default` whenever Clawd starts, so you can opt into hooks with minimal behavior drift via `kiro-cli --agent clawd` or `/agent swap clawd` (registered automatically when Clawd starts, or run `npm run install:kiro-hooks`). State hooks are verified on macOS and Windows.
-- **Kimi Code CLI (Kimi-CLI)** — command hooks via `~/.kimi/config.toml` (`[[hooks]]` entries) (registered automatically when Clawd starts, or run `npm run install:kimi-hooks`)
-- **Qwen Code** — command hooks via `~/.qwen/settings.json` (registered automatically when Clawd starts, or run `npm run install:qwen-hooks`); state tracking and Qwen `PermissionRequest` desktop approval bubbles are supported
-- **opencode** — [plugin integration](https://opencode.ai/docs/plugins) via `~/.config/opencode/opencode.json` (registered automatically when Clawd starts); zero-latency event streaming, permission bubbles with Allow/Always/Deny, and building animations when parallel subagents are spawned via the `task` tool
-- **Pi** — global extension via `~/.pi/agent/extensions/clawd-on-desk` (registered automatically when Clawd starts, or run `npm run install:pi-extension`); state-only interactive lifecycle and tool activity updates while preserving Pi's default YOLO behavior
-- **OpenClaw** — state-only plugin integration via `~/.openclaw/openclaw.json` (registered automatically when an OpenClaw config already exists, or run `npm run install:openclaw-plugin`); local `openclaw tui --local` sessions drive Clawd animations, without permission bubbles or terminal focus in Phase 1
-- **Hermes Agent** — [plugin integration](https://hermes-agent.org/) via Hermes' managed plugin directory (registered automatically when Hermes is installed, or run `npm run install:hermes-plugin`); state, sessions, SessionEnd, and terminal focus are supported
-- **Multi-agent coexistence** — run all agents simultaneously; Clawd tracks each session independently
+---
 
-### Animations & Interaction
-- **Real-time state awareness** — agent hooks and log polling drive Clawd's animations automatically
-- **12 animated states** — idle, thinking, typing, building, subagent groove, multi-subagent juggling, error, happy, notification, sweeping, carrying, sleeping
-- **Codex Pet imports** — import Codex Pet zip packages from `Settings…` → `Theme`; Clawd adapts their atlas animations into managed themes
-- **Eye tracking** — Clawd follows your cursor in idle state, with body lean and shadow stretch
-- **Sleep sequence** — yawning, dozing, collapsing, sleeping after 60s idle; mouse movement triggers a startled wake-up animation
-- **Click reactions** — double-click for a poke, 4 clicks for a flail
-- **Drag from any state** — grab Clawd anytime (Pointer Capture prevents fast-flick drops), release to resume
-- **Mini mode** — drag to right edge or right-click "Mini Mode"; Clawd hides at screen edge with peek-on-hover, mini alerts/celebrations, and parabolic jump transitions
+## Watch Companion
 
-### Permission Bubble
-- **In-app permission review** — when Claude Code, Codex CLI, CodeBuddy, or opencode request supported tool permissions, Clawd pops a floating bubble card instead of waiting in the terminal
-- **Allow / deny / agent-native extras** — one-click approve or reject, plus permission rules / `Always` actions when the source agent supports them
-- **Global hotkeys** — `Ctrl+Shift+Y` to Allow, `Ctrl+Shift+N` to Deny the latest permission bubble (only registered while bubbles are visible)
-- **Stacking layout** — multiple permission requests stack upward from the bottom-right corner
-- **Auto-dismiss** — if you answer in the terminal first, the bubble disappears automatically
-- **Per-agent toggle** — open `Settings…` → `Agents`, pick an agent, and turn off `Show pop-up bubbles` to keep prompts in that agent's own terminal/TUI
+### How It Works
 
-### Session Intelligence
-- **Multi-session tracking** — sessions across all agents resolve to the highest-priority state
-- **Subagent awareness** — headphones groove for 1 subagent, three-ball juggling for 2+
-- **Sessions dashboard + HUD** — right-click or tray → `Open Dashboard` to inspect live sessions, recent events, aliases, and jump to a terminal; a compact HUD near Clawd keeps current live sessions visible
-- **Terminal focus** — Dashboard/HUD actions jump to a specific session's terminal window; notification/attention states auto-focus the relevant terminal
-- **Process liveness detection** — detects crashed/exited supported agent processes and cleans up orphan sessions
-- **Startup recovery** — if Clawd restarts while any supported agent is still running, it stays awake instead of falling asleep
+```
+Desktop (Electron)                Watch (Wear OS / Kotlin)
+  src/main.js                       watch-app/android/
+  src/watch-adapter.js              service/BleService.kt
+  src/watch-controller.js           renderer/PetView.kt
+       │                            domain/ThemeReceiver.kt
+       │ stdio JSON
+       ▼
+  scripts/watch_buddy_bridge.py     (BLE Central, Python bleak)
+       │
+       │ GATT over BLE
+       ▼
+  ┌─────────────────────────────────────────────────────┐
+  │  CWD1: State + Theme frames     Desktop → Watch     │
+  │  CWD2: Approval Request         Desktop → Watch     │
+  │  CWD3: Approval Response        Watch → Desktop     │
+  │  CWD4: Meta + themeHash         Watch → Desktop     │
+  └─────────────────────────────────────────────────────┘
+```
 
-### System
-- **Click-through** — transparent areas pass clicks to windows below; only Clawd's body is interactive
-- **Position memory** — Clawd remembers where you left it across restarts (including mini mode)
-- **Single instance lock** — prevents duplicate Clawd windows
-- **Auto-start** — Claude Code's SessionStart hook can launch Clawd automatically if it's not running
-- **Do Not Disturb** — right-click or tray menu to enter sleep mode; all hook events are silenced until you wake Clawd. Permission bubbles are suppressed during DND — Codex and opencode fall back to their native prompts, while Claude Code and CodeBuddy fall back to their built-in permission flow. Antigravity and Pi are state-only integrations.
-- **Sound effects** — short audio cues on task completion and permission requests (toggle via right-click menu; 10s cooldown, auto-muted during DND)
-- **System tray** — resize (S/M/L), DND mode, language switch, auto-start, check for updates
-- **i18n** — English, Simplified Chinese, Traditional Chinese, Korean, and Japanese UI; switch via right-click menu or tray
-- **Auto-update** — checks GitHub releases; Windows installs NSIS updates on quit, macOS/Linux `git pull` + restart when running from a cloned repo
+The desktop spawns a Python sidecar (`watch_buddy_bridge.py`) that acts as a BLE Central. The watch runs as a BLE Peripheral (GATT Server). State snapshots, theme data, and permission requests flow over custom GATT characteristics.
 
-## Animations
+### Watch Features
+
+#### Real-time State Sync
+The watch mirrors the desktop pet's state over BLE, with 14 distinct animations: idle, thinking, typing, building, headphones groove (1 subagent), juggling (2+ subagents), error, happy, notification, sweeping, carrying, sleeping, and more. A color-coded chip at the bottom shows the current state. Each state transition triggers a short haptic vibration.
+
+#### Theme Sync over BLE
+Custom themes are automatically pushed from the desktop to the watch. SVG animation files are chunked and transferred over BLE, then rendered on-device via an invisible WebView that captures CSS animations frame-by-frame into cached WebP sequences. The watch uses a SHA-256 fingerprint to detect stale themes and only syncs when needed.
+
+#### Permission Approval from Your Wrist
+When your AI agent requests permission to run a tool or command, the watch vibrates with risk-differentiated haptic patterns:
+- **High risk**: triple pulse, gesture disabled — buttons only
+- **Medium risk**: double pulse
+- **Low risk**: single short pulse
+
+Three input methods:
+1. **Buttons**: Deny / Allow / Always Allow
+2. **Wrist flick**: flick to approve, shake to deny (disabled for high-risk)
+3. **Timeout**: auto-denies if the screen turns off or the timer expires
+
+#### Auto-reconnect & Power Management
+The BLE connection automatically recovers from disconnects with progressive retry delays. A 30-second watchdog detects silent Central disappearances. The watch pauses animations and gesture detection when the screen is off to save battery.
+
+### Watch Demo
+
+<p align="center">
+  <img src="assets/watch/watch-working.png" width="200" alt="Watch showing Connected status with the crab typing — working state">
+  <br>
+  <sub>Clawd on a Wear OS watch — "Connected" with the crab typing away while the agent works</sub>
+</p>
+
+### Setup Guide
+
+#### Prerequisites
+
+| Component | Requirement |
+|-----------|------------|
+| Watch | Wear OS device with BLE support |
+| Desktop | macOS (tested), Windows/Linux (experimental) |
+| Python | Python 3.8+ with `bleak` library |
+| Android SDK | compileSdk 34, JDK 17 |
+
+#### 1. Desktop: Enable Watch Mode
+
+1. Launch Clawd and open **Settings** (right-click or tray menu)
+2. Navigate to the **Remote Approval** tab (airplane icon in sidebar)
+3. Expand the **Watch** card
+4. Toggle **"Enable"** ON — this starts the BLE bridge sidecar in the background
+5. Click **"Scan"** — nearby Wear OS devices will appear as a list
+6. Click your watch from the device list — the desktop connects automatically
+7. Once connected, status shows **"Connected: \<device name\>"**
+8. Optionally, toggle **"Approval on Watch"** ON to forward tool-permission requests to the watch
+
+> If the bridge reports `missing_bleak`, click the **"Install bleak"** button in the error hint — it runs `pip install bleak` for you.
+
+**Shortcut for returning users**: If you've connected before, the device address is saved. After enabling, click **"Reconnect"** to skip scanning.
+
+<details>
+<summary>Advanced: environment variable overrides (for development/CI)</summary>
+
+```bash
+export CLAWD_WATCH_ENABLED=1                      # force-enable (overrides Settings)
+export CLAWD_WATCH_ADDRESS="<ble-address>"         # BLE address (macOS UUID format)
+export CLAWD_WATCH_NAME_PREFIX="Clawd"             # scan name prefix
+export CLAWD_WATCH_PYTHON="python3"                # Python executable
+```
+
+</details>
+
+#### 2. Watch: Build & Install
+
+```bash
+cd watch-app/android
+
+# Set environment
+export ANDROID_HOME=~/Library/Android/sdk
+export JAVA_HOME=/path/to/jdk17   # JDK 17 required (Gradle 8.2)
+
+# Build
+./gradlew assembleDebug
+
+# Install to watch (connect via ADB)
+adb install -r -d app/build/outputs/apk/debug/app-debug.apk
+```
+
+#### 3. Pair & Connect
+
+1. Launch the watch app — it enters pairing mode and begins BLE advertising
+2. Start the desktop app with `CLAWD_WATCH_ENABLED=1`
+3. The desktop scans for nearby BLE peripherals with the "Clawd" prefix
+4. Once connected, the watch shows "Connected" and the pet starts syncing states
+5. If the desktop has a custom theme, it auto-syncs to the watch on first connection
+
+#### 4. Verify
+
+```bash
+# Watch logs
+adb logcat -s PetView FrameRecorder ThemeConfig BleService
+
+# Look for:
+# BleService: Central connected
+# ThemeReceiver: assembled: clawd (8399a0)
+# PetView: setState → WORKING
+```
+
+---
+
+## Desktop Features
+
+> All features from upstream [clawd-on-desk](https://github.com/rullerzhou-afk/clawd-on-desk) are included. Below is a summary.
+
+### Agent Integrations
+
+| Agent | Integration | Permission Bubbles |
+|-------|------------|-------------------|
+| Claude Code | Command hooks + HTTP permission hooks | Yes |
+| Codex CLI | Official hooks + JSONL fallback | Yes |
+| Copilot CLI | Command hooks | No |
+| Gemini CLI | Command hooks (auto-registered) | No |
+| Cursor Agent | IDE hooks (auto-registered) | No |
+| Antigravity CLI | Command hooks (state-only) | No |
+| CodeBuddy | Command hooks + HTTP permission hooks | Yes |
+| Kiro CLI | Custom agent configs | No |
+| Kimi Code CLI | Command hooks via TOML | No |
+| Qwen Code | Command hooks + permission requests | Yes |
+| opencode | Plugin integration | Yes |
+| Pi | Global extension (state-only) | No |
+| OpenClaw | Plugin integration (state-only) | No |
+| Hermes Agent | Plugin integration | No |
+
+### Animations
 
 <table>
   <tr>
     <td align="center"><img src="assets/gif/clawd-idle.gif" width="100"><br><sub>Idle</sub></td>
-    <td align="center"><img src="assets/gif/clawd-thinking.gif" width="100"><br><sub>Thought Bubble</sub></td>
+    <td align="center"><img src="assets/gif/clawd-thinking.gif" width="100"><br><sub>Thinking</sub></td>
     <td align="center"><img src="assets/gif/clawd-typing.gif" width="100"><br><sub>Typing</sub></td>
     <td align="center"><img src="assets/gif/clawd-building.gif" width="100"><br><sub>Building</sub></td>
     <td align="center"><img src="assets/gif/clawd-headphones-groove.gif" width="100"><br><sub>1 Subagent</sub></td>
@@ -118,89 +219,59 @@ Thinking when you prompt, typing when tools run, grooving or juggling for subage
   </tr>
 </table>
 
-Full event-to-state mapping, mini mode, and click reactions: **[docs/guides/state-mapping.md](docs/guides/state-mapping.md)**
+### Other Desktop Features
 
-## Multi-display
+- **Permission bubbles** — floating cards for in-app permission review with Allow / Deny / Always Allow and global hotkeys (`Ctrl+Shift+Y` / `Ctrl+Shift+N`)
+- **Session dashboard + HUD** — inspect live sessions, recent events, and jump to terminals
+- **Custom themes** — create your own character with SVG/GIF/APNG assets, or import Codex Pet zip packages
+- **Multi-display** — proportional sizing, portrait monitor boost, drag across displays
+- **Mini mode** — hide at screen edge with peek-on-hover
+- **Eye tracking** — Clawd follows your cursor in idle state
+- **i18n** — English, Simplified Chinese, Traditional Chinese, Korean, Japanese
+- **Auto-update** — checks GitHub releases for new versions
 
-Clawd adapts to multi-monitor setups: proportional sizing uses the display Clawd launches on, portrait monitors get a bounded boost so the pet stays readable on tall narrow screens, and you can drag Clawd across displays.
+Full feature documentation: **[docs/guides/state-mapping.md](docs/guides/state-mapping.md)** | **[docs/guides/setup-guide.md](docs/guides/setup-guide.md)** | **[docs/guides/known-limitations.md](docs/guides/known-limitations.md)**
 
-<p align="center"><sub>Want to see the real multi-monitor behavior? <a href="assets/videos/clawd-multi-monitor-demo.mp4">Watch the demo video in this repository</a>.</sub></p>
-
-## Quick Start
-
-For normal use, download the latest prebuilt installer from **[GitHub Releases](https://github.com/rullerzhou-afk/clawd-on-desk/releases/latest)**:
-
-- **Windows**: `Clawd-on-Desk-Setup-<version>-x64.exe` or `Clawd-on-Desk-Setup-<version>-arm64.exe`
-- **macOS**: `.dmg`
-- **Linux**: `.AppImage` or `.deb`
-
-Launch Clawd after installing it; supported agent hooks/plugins are synced automatically on startup.
-
-Run from source only if you're contributing, testing unreleased code, or debugging integrations. Source installs download Electron/build tooling and can create a large `node_modules` tree.
+### Quick Start (Desktop Only)
 
 ```bash
-# Clone the repo
-git clone https://github.com/rullerzhou-afk/clawd-on-desk.git
-cd clawd-on-desk
-
-# Install dependencies
+git clone https://github.com/happyomg/clawd-on-watch.git
+cd clawd-on-watch
 npm install
-
-# Start Clawd (auto-registers Claude Code hooks on launch)
 npm start
 ```
 
-**Claude Code**, **Codex CLI**, and **Copilot CLI** work out of the box with auto-registered hooks. **Gemini CLI**, **Antigravity CLI (agy)**, **Cursor Agent**, **CodeBuddy**, **Kiro CLI**, **Kimi Code CLI (Kimi-CLI)**, **Qwen Code**, **opencode**, **Pi**, **OpenClaw**, and **Hermes Agent** auto-register when Clawd launches (if they're installed; OpenClaw also needs an initialized config). Also covers remote SSH, WSL, and platform-specific notes (macOS / Linux): **[docs/guides/setup-guide.md](docs/guides/setup-guide.md)**
+---
 
-Want to run Claude Code / Codex CLI on a remote server and surface state plus permission bubbles in your local Clawd? Use the in-app **Settings → Remote SSH → One-click deploy**. Full walkthrough, Doctor boundary, and FAQ: **[docs/guides/guide-remote-ssh.md](docs/guides/guide-remote-ssh.md)**
+## Fork History
 
-For the official `Codex + WSL` status, Clawd's current implementation boundary, and why this is easy to misread, see: **[docs/guides/codex-wsl-clarification.md](docs/guides/codex-wsl-clarification.md)**
+This project is forked from [**clawd-on-desk**](https://github.com/rullerzhou-afk/clawd-on-desk) by [@rullerzhou-afk](https://github.com/rullerzhou-afk) (鹿鹿). The upstream project is a community-driven Electron desktop pet that reacts to AI coding agents in real time.
 
-## Known Limitations
+**What we added:**
+- Wear OS companion app (`watch-app/android/`) — full Kotlin implementation with BLE peripheral, SVG animation rendering, and wrist gesture recognition
+- Python BLE bridge (`scripts/watch_buddy_bridge.py`) — asyncio + bleak for macOS/Windows/Linux Central connectivity
+- Desktop watch adapter (`src/watch-adapter.js`, `src/watch-controller.js`, `src/watch-sidecar-client.js`) — orchestrates sidecar lifecycle, state push, theme sync, and permission relay
+- Theme transfer protocol — chunked SVG-over-BLE with SHA-256 fingerprinting for incremental sync
 
-Some agents have feature gaps (no permission bubble, polling latency, no terminal focus). See the full table: **[docs/guides/known-limitations.md](docs/guides/known-limitations.md)**
+### Syncing with Upstream
 
-## Custom Themes
+The `upstream` remote is already configured. To pull in new features or fixes from the original clawd-on-desk:
 
-Clawd supports custom themes — replace the default crab with your own character and animations. If you already have a Codex Pet package, import its zip from `Settings…` → `Theme` → `Import pet zip`; Clawd turns the atlas into a managed theme automatically.
-
-**Quick start:**
-1. Scaffold a theme:
-   ```bash
-   node scripts/create-theme.js my-theme
-   # or
-   npm run create-theme -- my-theme
-   ```
-   No argument also works: it creates the next available `my-theme` scaffold in your user themes directory.
-2. Edit `theme.json` and create your assets (SVG, GIF, APNG, WebP, PNG, JPG, or JPEG)
-3. Restart Clawd or open `Settings…` → `Theme` → select your theme
-
-**Minimum viable theme:** 1 SVG (idle with eye tracking) + 7 GIF/APNG files (thinking, working, error, happy, notification, sleeping, waking). Eye tracking can be disabled to use any format for all states.
-
-Validate your theme before distributing:
 ```bash
-node scripts/validate-theme.js path/to/your-theme
+git fetch upstream
+git checkout main
+git merge upstream/main
+# resolve conflicts if any, then:
+git push origin main
 ```
 
-Theme cards in `Settings…` → `Theme` now expose capability badges such as `Tracked idle`, `Static theme`, `Mini`, `Direct sleep`, and `No reactions`, so users can tell what a theme supports before switching.
-
-See [docs/guides/guide-theme-creation.md](docs/guides/guide-theme-creation.md) for the full creation guide with tiered paths (beginner → advanced), `theme.json` field reference, and asset guidelines.
-
-> Third-party SVG files are automatically sanitized for security.
-
-### Roadmap
-
-Some things we'd like to explore in the future:
-
-- Codex terminal focus via process tree lookup from `codex.exe` PID
-- Theme registry and in-app download
-- Hook uninstall script for clean app removal
+**Likely conflict spots**: `README*.md`, `package.json`, `src/main.js` (watch adapter init lives here). Our watch-exclusive files (`watch-app/`, `scripts/watch_buddy_bridge.py`, `src/watch-*.js`) won't conflict since they don't exist upstream.
 
 ## Contributing
 
-Clawd on Desk is a community-driven project. Bug reports, feature ideas, and pull requests are all welcome — open an [issue](https://github.com/rullerzhou-afk/clawd-on-desk/issues) to discuss or submit a PR directly.
+Bug reports, feature ideas, and pull requests are welcome — open an [issue](https://github.com/happyomg/clawd-on-watch/issues) or submit a PR directly.
 
-### Maintainers
+### Upstream Maintainers
 
 <table>
   <tr>
@@ -289,6 +360,7 @@ Thanks to everyone who has helped make Clawd better:
 
 ## Acknowledgments
 
+- Upstream project [clawd-on-desk](https://github.com/rullerzhou-afk/clawd-on-desk) by [@rullerzhou-afk](https://github.com/rullerzhou-afk) (鹿鹿)
 - Clawd pixel art reference from [clawd-tank](https://github.com/marciogranzotto/clawd-tank) by [@marciogranzotto](https://github.com/marciogranzotto)
 - Shared on [LINUX DO](https://linux.do/) community
 
@@ -299,8 +371,8 @@ Source code is licensed under the [GNU Affero General Public License v3.0](LICEN
 **Artwork and bundled theme assets (including `assets/` and `themes/*/assets/`) are NOT covered by AGPL-3.0.** All rights reserved by their respective copyright holders. See [assets/LICENSE](assets/LICENSE) and the notices below for details.
 
 - **Clawd** character is the property of [Anthropic](https://www.anthropic.com). This is an unofficial fan project, not affiliated with or endorsed by Anthropic.
-- **Calico cat (三花猫)** artwork by 鹿鹿 ([@rullerzhou-afk](https://github.com/rullerzhou-afk)). All rights reserved.
-- **Cloudling (云宝)** artwork by 鹿鹿 ([@rullerzhou-afk](https://github.com/rullerzhou-afk)). All rights reserved. Cloudling's visual direction includes an homage to the OpenAI Codex logo; Codex/OpenAI marks remain the property of OpenAI, and this project is not affiliated with or endorsed by OpenAI.
+- **Calico cat** artwork by 鹿鹿 ([@rullerzhou-afk](https://github.com/rullerzhou-afk)). All rights reserved.
+- **Cloudling** artwork by 鹿鹿 ([@rullerzhou-afk](https://github.com/rullerzhou-afk)). All rights reserved. Cloudling's visual direction includes an homage to the OpenAI Codex logo; Codex/OpenAI marks remain the property of OpenAI, and this project is not affiliated with or endorsed by OpenAI.
 - **Third-party contributions**: copyright retained by respective artists.
 
 **No cryptocurrency.** This project has no token, coin, NFT, or airdrop, and is not affiliated with any cryptocurrency project.
