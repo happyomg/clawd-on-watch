@@ -255,17 +255,37 @@ npm start
 
 ### 업스트림 동기화
 
-`upstream` 리모트가 이미 설정되어 있습니다. 원본 clawd-on-desk의 새 기능이나 수정 사항을 가져오려면:
+먼저 upstream 리모트가 원본 프로젝트를 가리키는지 확인합니다:
+
+```bash
+git remote -v | grep upstream
+# 없거나 잘못된 경우:
+git remote remove upstream 2>/dev/null
+git remote add upstream https://github.com/rullerzhou-afk/clawd-on-desk.git
+```
+
+업스트림 변경사항 가져오기:
 
 ```bash
 git fetch upstream
 git checkout main
 git merge upstream/main
-# 충돌이 있으면 해결한 다음:
+# 충돌 해결 후:
 git push origin main
 ```
 
-**충돌 발생 가능 파일**: `README*.md`, `package.json`, `src/main.js` (워치 어댑터 초기화 코드 위치). 워치 전용 파일 (`watch-app/`, `scripts/watch_buddy_bridge.py`, `src/watch-*.js`)은 업스트림에 존재하지 않으므로 충돌하지 않습니다.
+#### 충돌 시 "우리 코드" vs "업스트림 코드" 식별
+
+포크에서 수정한 업스트림 파일은 **15개**뿐입니다. 나머지 73개 파일 (`watch-app/`, `src/watch-*.js`, `scripts/watch_buddy_bridge.py`)은 우리 전용이므로 절대 충돌하지 않습니다.
+
+| 파일 | 우리의 변경 | 병합 전략 |
+|------|-----------|----------|
+| `src/main.js` | Watch adapter 초기화, 훅, 권한 필터 | **수동 병합** — `// ── Watch adapter` 블록과 `watchAdapter` 단일 행 호출 유지 |
+| `README*.md` | 워치 브랜딩으로 전면 재작성 | **우리 것 유지** (`git checkout --ours`) |
+| `package.json` | `name`과 `description`만 변경 | **name/description은 우리 것**, **버전은 업스트림 것** |
+| 기타 `src/settings-*`, `src/prefs.js` | 끝에 watch 코드 추가 | **양쪽 모두 유지** |
+
+**빠른 식별 규칙**: 충돌 hunk에서 `watch` 또는 `Watch`를 검색하세요. 이 키워드가 포함된 코드가 우리 코드입니다.
 
 ## 기여하기
 

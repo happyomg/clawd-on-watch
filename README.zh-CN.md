@@ -255,17 +255,46 @@ npm start
 
 ### 同步上游更新
 
-`upstream` remote 已配置好。拉取上游 clawd-on-desk 的新功能或修复：
+首先确认 upstream remote 指向原始项目：
+
+```bash
+# 检查当前 upstream（应该是 clawd-on-desk，不是 clawd-on-watch）
+git remote -v | grep upstream
+
+# 如果没有或不对，重新设置：
+git remote remove upstream 2>/dev/null
+git remote add upstream https://github.com/rullerzhou-afk/clawd-on-desk.git
+```
+
+拉取上游变更：
 
 ```bash
 git fetch upstream
 git checkout main
 git merge upstream/main
-# 有冲突则解决，然后：
+# 解决冲突，然后：
 git push origin main
 ```
 
-**冲突热点**：`README*.md`、`package.json`、`src/main.js`（手表适配器初始化在此文件中）。我们独有的文件（`watch-app/`、`scripts/watch_buddy_bridge.py`、`src/watch-*.js`）不会冲突，因为上游不存在这些文件。
+#### 冲突中如何识别"我们的"还是"上游的"
+
+我们 fork 只改了 **15 个上游文件**。其余 73 个文件（`watch-app/`、`src/watch-*.js`、`scripts/watch_buddy_bridge.py`）是我们独有的，永远不会冲突。遇到合并冲突时，参考这张表：
+
+| 文件 | 我们的改动 | 合并策略 |
+|------|-----------|---------|
+| `src/main.js` | Watch adapter 初始化、`notifyStateChanged`/`notifyPermissionsChanged` 钩子、权限过滤 | **手动合并** — 我们的改动是插入的代码块（`// ── Watch adapter` 段落 ~2130 行，以及 `hardwareBuddyAdapter` 调用旁的单行添加）。两边都保留 |
+| `README*.md` | 为手表品牌全部重写 | **保留我们的** (`git checkout --ours README.md`) — 我们维护自己的 README |
+| `package.json` | 只改了 `name` 和 `description` | **name/description 保留我们的**，**版本号和依赖取上游的** |
+| `src/settings-actions.js` | 末尾追加 `watch.*` 命令 | **两边都保留** — 我们的追加在文件末尾 |
+| `src/preload-settings.js` | 追加 watch IPC 处理 | **两边都保留** — 追加的代码块 |
+| `src/settings-tab-telegram-approval.js` | 一行：`buildWatchChannelCard()` | **两边都保留** — 单行插入 |
+| `src/prefs.js` | Watch 默认值代码块 | **两边都保留** — 追加的代码块 |
+| `.gitignore` | Android/watch 忽略规则 | **两边都保留** — 追加的行 |
+| `CLAUDE.md` | Watch 开发文档 | **保留我们的** — 这是我们的项目文档 |
+
+**快速识别规则**：在冲突的 hunk 中搜索 `watch` 或 `Watch`。包含这些关键词的就是我们的代码，上游不存在任何手表相关代码。
+
+**`src/main.js` 最安全的解法**：我们的 watch 代码遵循一致的模式 — 每处插入要么是 `// ── Watch adapter` 标记的独立代码块，要么是在 `hardwareBuddyAdapter` 调用旁加的一行等价 `watchAdapter` 调用。解冲突时，接受上游的结构变更，然后在相同逻辑位置重新插入我们的 watch 代码。
 
 ## 参与贡献
 

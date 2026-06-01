@@ -255,17 +255,37 @@ npm start
 
 ### 同步上游更新
 
-`upstream` remote 已設定好。拉取上游 clawd-on-desk 的新功能或修復：
+首先確認 upstream remote 指向原始專案：
+
+```bash
+git remote -v | grep upstream
+# 如果沒有或不對：
+git remote remove upstream 2>/dev/null
+git remote add upstream https://github.com/rullerzhou-afk/clawd-on-desk.git
+```
+
+拉取上游變更：
 
 ```bash
 git fetch upstream
 git checkout main
 git merge upstream/main
-# 有衝突則解決，然後：
+# 解決衝突，然後：
 git push origin main
 ```
 
-**衝突熱點**：`README*.md`、`package.json`、`src/main.js`（手錶適配器初始化在此檔案中）。我們獨有的檔案（`watch-app/`、`scripts/watch_buddy_bridge.py`、`src/watch-*.js`）不會衝突，因為上游不存在這些檔案。
+#### 衝突中如何識別「我們的」還是「上游的」
+
+我們 fork 只改了 **15 個上游檔案**。其餘 73 個檔案（`watch-app/`、`src/watch-*.js`、`scripts/watch_buddy_bridge.py`）是我們獨有的，永遠不會衝突。遇到合併衝突時參考：
+
+| 檔案 | 我們的改動 | 合併策略 |
+|------|-----------|---------|
+| `src/main.js` | Watch adapter 初始化、鉤子、權限過濾 | **手動合併** — 保留 `// ── Watch adapter` 段落和 `watchAdapter` 單行呼叫 |
+| `README*.md` | 為手錶品牌全部重寫 | **保留我們的** (`git checkout --ours`) |
+| `package.json` | `name` 和 `description` | **name/description 保留我們的**，**版本號取上游** |
+| 其他 `src/settings-*`、`src/prefs.js` | 末尾追加 watch 程式碼 | **兩邊都保留** |
+
+**快速識別規則**：衝突 hunk 中搜尋 `watch` 或 `Watch`。包含這些關鍵字的就是我們的程式碼。
 
 ## 參與貢獻
 

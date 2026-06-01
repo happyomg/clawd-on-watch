@@ -257,17 +257,37 @@ npm start
 
 ### アップストリームとの同期
 
-`upstream` リモートはすでに設定されています。オリジナルの clawd-on-desk から新機能や修正を取り込むには:
+まず upstream リモートが元のプロジェクトを指しているか確認します:
+
+```bash
+git remote -v | grep upstream
+# ない場合や間違っている場合:
+git remote remove upstream 2>/dev/null
+git remote add upstream https://github.com/rullerzhou-afk/clawd-on-desk.git
+```
+
+アップストリームの変更を取り込む:
 
 ```bash
 git fetch upstream
 git checkout main
 git merge upstream/main
-# コンフリクトがあれば解決してから:
+# コンフリクトを解決してから:
 git push origin main
 ```
 
-**コンフリクト発生箇所**: `README*.md`、`package.json`、`src/main.js`（ウォッチアダプターの初期化コードがここにあります）。ウォッチ専用ファイル（`watch-app/`、`scripts/watch_buddy_bridge.py`、`src/watch-*.js`）はアップストリームに存在しないため、コンフリクトしません。
+#### コンフリクト時の「自分のコード」と「アップストリーム」の識別
+
+フォークで変更したアップストリームファイルは **15 個**のみです。残り 73 ファイル（`watch-app/`、`src/watch-*.js`、`scripts/watch_buddy_bridge.py`）は独自のもので、絶対にコンフリクトしません。
+
+| ファイル | 変更内容 | マージ戦略 |
+|---------|---------|----------|
+| `src/main.js` | Watch adapter 初期化、フック、権限フィルター | **手動マージ** — `// ── Watch adapter` ブロックと `watchAdapter` の 1 行呼び出しを保持 |
+| `README*.md` | ウォッチブランディングで全面書き換え | **こちらを保持** (`git checkout --ours`) |
+| `package.json` | `name` と `description` のみ | **name/description はこちら**、**バージョンはアップストリーム** |
+| その他 `src/settings-*`、`src/prefs.js` | 末尾にウォッチコード追加 | **両方保持** |
+
+**素早い識別ルール**: コンフリクトの hunk で `watch` または `Watch` を検索してください。これらのキーワードを含むコードが私たちのコードです。
 
 ## コントリビュート
 

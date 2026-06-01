@@ -255,17 +255,46 @@ This project is forked from [**clawd-on-desk**](https://github.com/rullerzhou-af
 
 ### Syncing with Upstream
 
-The `upstream` remote is already configured. To pull in new features or fixes from the original clawd-on-desk:
+First, make sure the upstream remote points to the original project:
+
+```bash
+# Check current upstream (should be clawd-on-desk, not clawd-on-watch)
+git remote -v | grep upstream
+
+# If missing or wrong, set it:
+git remote remove upstream 2>/dev/null
+git remote add upstream https://github.com/rullerzhou-afk/clawd-on-desk.git
+```
+
+Pull in upstream changes:
 
 ```bash
 git fetch upstream
 git checkout main
 git merge upstream/main
-# resolve conflicts if any, then:
+# resolve conflicts, then:
 git push origin main
 ```
 
-**Likely conflict spots**: `README*.md`, `package.json`, `src/main.js` (watch adapter init lives here). Our watch-exclusive files (`watch-app/`, `scripts/watch_buddy_bridge.py`, `src/watch-*.js`) won't conflict since they don't exist upstream.
+#### How to identify "ours" vs "theirs" in conflicts
+
+Our fork touches only **15 upstream files**. The rest (73 files under `watch-app/`, `src/watch-*.js`, `scripts/watch_buddy_bridge.py`) are ours exclusively and will never conflict. When a merge conflict arises, use this cheat sheet:
+
+| File | Our changes | Merge strategy |
+|------|-------------|----------------|
+| `src/main.js` | Watch adapter init, `notifyStateChanged`/`notifyPermissionsChanged` hooks, permission filter | **Manual merge** — our changes are inserted blocks (`// ── Watch adapter` section ~line 2130, plus single-line additions near `hardwareBuddyAdapter` calls). Keep both sides. |
+| `README*.md` | Full rewrite for watch branding | **Keep ours** (`git checkout --ours README.md`) — we maintain our own READMEs |
+| `package.json` | `name` and `description` fields only | **Keep ours** for name/description, **take theirs** for version bumps and dependency changes |
+| `src/settings-actions.js` | Appended `watch.*` commands at the end | **Keep both** — our additions are at the end of the file |
+| `src/preload-settings.js` | Appended watch IPC handlers | **Keep both** — appended block |
+| `src/settings-tab-telegram-approval.js` | One line: `buildWatchChannelCard()` | **Keep both** — single line insertion |
+| `src/prefs.js` | Watch defaults block | **Keep both** — appended block |
+| `.gitignore` | Android/watch ignore rules | **Keep both** — appended lines |
+| `CLAUDE.md` | Watch development docs | **Keep ours** — this is our project documentation |
+
+**Quick identification rule**: search for `watch` or `Watch` in the conflicting hunk. If the hunk contains these keywords, it's our code. Upstream doesn't have any watch-related code.
+
+**Safest approach for `src/main.js`**: our watch code follows a consistent pattern — every insertion is either (a) a standalone block marked with `// ── Watch adapter`, or (b) a one-liner next to a `hardwareBuddyAdapter` call adding the equivalent `watchAdapter` call. When resolving conflicts, accept the upstream structural changes and re-apply our watch insertions at the same logical locations.
 
 ## Contributing
 
