@@ -208,20 +208,26 @@ async def run(args):
         delay = RECONNECT_DELAYS[min(reconnect_attempt, len(RECONNECT_DELAYS) - 1)]
         reconnect_attempt += 1
         await asyncio.sleep(delay)
+        need_retry = False
         try:
             if stopping or (client and client.is_connected):
                 return
             await connect_to(address)
             if not client or not client.is_connected:
-                await schedule_reconnect()
+                need_retry = True
+        except Exception:
+            need_retry = True
         finally:
             reconnect_task = None
+            if need_retry and not stopping and not manual_disconnect:
+                await schedule_reconnect()
 
     async def reconnect_via_scan():
         nonlocal reconnect_task, reconnect_attempt
         delay = RECONNECT_DELAYS[min(reconnect_attempt, len(RECONNECT_DELAYS) - 1)]
         reconnect_attempt += 1
         await asyncio.sleep(delay)
+        need_retry = False
         try:
             if stopping or (client and client.is_connected):
                 return
@@ -237,16 +243,18 @@ async def run(args):
             if target:
                 await connect_to(target)
                 if not client or not client.is_connected:
-                    await schedule_reconnect()
+                    need_retry = True
             else:
-                await schedule_reconnect()
+                need_retry = True
         except Exception as e:
             import sys
             sys.stderr.write(f"[reconnect_via_scan] error: {e}\n")
             sys.stderr.flush()
-            await schedule_reconnect()
+            need_retry = True
         finally:
             reconnect_task = None
+            if need_retry and not stopping and not manual_disconnect:
+                await schedule_reconnect()
 
     async def force_disconnect():
         nonlocal client
