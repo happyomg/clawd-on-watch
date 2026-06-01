@@ -240,8 +240,11 @@ async def run(args):
                     await schedule_reconnect()
             else:
                 await schedule_reconnect()
-        except Exception:
-            pass
+        except Exception as e:
+            import sys
+            sys.stderr.write(f"[reconnect_via_scan] error: {e}\n")
+            sys.stderr.flush()
+            await schedule_reconnect()
         finally:
             reconnect_task = None
 
@@ -369,6 +372,10 @@ async def run(args):
             elif not client or not client.is_connected:
                 if not reconnect_task and not stopping and not manual_disconnect:
                     await schedule_reconnect()
+                elif reconnect_task:
+                    pass  # reconnect already scheduled
+                elif manual_disconnect:
+                    emit({"type": "error", "code": "MANUAL_DISCONNECT", "message": "manual_disconnect=true, not reconnecting"})
             continue
         if msg is None:
             break
