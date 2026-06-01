@@ -287,14 +287,22 @@ async def run(args):
                 pass
 
         try:
-            c = BleakClient(address, disconnected_callback=on_disconnect)
+            c = BleakClient(address, disconnected_callback=on_disconnect, services=[CWD_SERVICE])
             await c.connect(timeout=args.connect_timeout)
             if not c.is_connected:
                 emit_error("CONNECT_FAILED", f"failed to connect to {address}")
                 return
 
-            meta_bytes = await c.read_gatt_char(CWD4_META)
-            meta = json.loads(meta_bytes.decode("utf-8"))
+            try:
+                meta_bytes = await asyncio.wait_for(c.read_gatt_char(CWD4_META), timeout=5.0)
+                meta = json.loads(meta_bytes.decode("utf-8"))
+            except (asyncio.TimeoutError, Exception) as e:
+                # CWD4 read failed — likely macOS GATT cache stale. Proceed
+                # without meta (desktop will see empty themeHash → push theme).
+                import sys
+                sys.stderr.write(f"[connect] CWD4 read failed: {e}, proceeding without meta\n")
+                sys.stderr.flush()
+                meta = {}
             connected_name = meta.get("deviceName", address)
             theme_hash = meta.get("themeHash")
 
@@ -387,29 +395,32 @@ async def run(args):
                     emit_error("WRITE_FAILED", str(e))
                     await force_disconnect()
 
-        elif msg_type == "theme_sync":
-            frames = msg.get("frames", [])
-            if client and client.is_connected and isinstance(frames, list) and frames:
-                theme_hash = ""
-                for fr in frames:
-                    if isinstance(fr, dict) and fr.get("t") == "done":
-                        theme_hash = fr.get("hash", "")
-                ok = True
+        elif msg_type == "theme_frame":
+            # Write each theme frame immediately via CWD1 (with response for
+            # reliability). Each frame is small (~500B), and response=True
+            # provides back-pressure without flooding.
+            if client and client.is_connected:
+                fr = {k: v for k, v in msg.items() if k != "type"}
+                payload = json.dumps(fr, ensure_ascii=False, separators=(",", ":"))
                 try:
-                    for fr in frames:
-                        if disconnect_event.is_set():
-                            ok = False
-                            break
-                        payload = json.dumps(fr, ensure_ascii=False, separators=(",", ":"))
-                        await do_gatt(client.write_gatt_char(CWD5_THEME, payload.encode("utf-8"), response=True))
-                except asyncio.CancelledError:
-                    ok = False
+                    await client.write_gatt_char(CWD1_STATE, payload.encode("utf-8"), response=True)
+                    await asyncio.sleep(0.05)  # 50ms pacing per frame
+                    if not hasattr(run, '_theme_count'):
+                        run._theme_count = 0
+                        run._theme_hash = ''
+                    run._theme_count += 1
+                    if fr.get("t") == "done":
+                        run._theme_hash = fr.get("hash", "")
                 except Exception as e:
-                    ok = False
                     emit_error("THEME_WRITE_FAILED", str(e))
                     await force_disconnect()
-                if ok:
-                    emit({"type": "theme_synced", "hash": theme_hash, "frames": len(frames)})
+
+        elif msg_type == "theme_done":
+            count = getattr(run, '_theme_count', 0)
+            theme_hash = getattr(run, '_theme_hash', '')
+            run._theme_count = 0
+            run._theme_hash = ''
+            emit({"type": "theme_synced", "hash": theme_hash, "frames": count})
 
         elif msg_type == "connect":
             addr = msg.get("address", "")

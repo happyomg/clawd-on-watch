@@ -153,7 +153,12 @@ class WatchSidecarClient {
    */
   sendThemeData(frames) {
     if (!Array.isArray(frames) || frames.length === 0) return;
-    this._writeStdin({ type: "theme_sync", frames });
+    // Each frame is a separate stdin line (~500B each) instead of one giant
+    // JSON array (~200KB). Avoids Python asyncio.StreamReader's readline limit.
+    for (const frame of frames) {
+      this._writeStdin({ type: "theme_frame", ...frame });
+    }
+    this._writeStdin({ type: "theme_done" });
   }
 
   scan() {

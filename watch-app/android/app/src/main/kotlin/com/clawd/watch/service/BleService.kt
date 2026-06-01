@@ -526,12 +526,14 @@ class BleService : Service() {
 
     private fun handleStateWrite(data: ByteArray) {
         val text = data.toString(Charsets.UTF_8)
-        Log.i(TAG, "handleStateWrite: ${data.size} bytes")
         try {
             val json = JSONObject(text)
-            // Explicit disconnect signal from the desktop: immediately tear down
-            // the link and restart advertising so the watch can be re-discovered
-            // without waiting for the 30s keepalive watchdog.
+            // Theme frames (manifest/chunk/done) have a "t" field
+            if (json.has("t")) {
+                handleThemeWrite(data)
+                return
+            }
+            // Explicit disconnect signal
             if (json.optString("type") == "disconnect") {
                 Log.i(TAG, "Received explicit disconnect signal from Central")
                 forceDisconnectCentral()
@@ -588,12 +590,19 @@ class BleService : Service() {
         }
     }
 
+    private var themeWriteCount = 0
+
     private fun handleThemeWrite(data: ByteArray) {
+        themeWriteCount++
         val text = data.toString(Charsets.UTF_8)
         try {
-            val manifest = themeReceiver.onFrame(JSONObject(text))
+            val json = JSONObject(text)
+            val frameType = json.optString("t", "?")
+            if (themeWriteCount % 50 == 1 || frameType == "manifest" || frameType == "done") {
+                Log.i(TAG, "handleThemeWrite #$themeWriteCount: t=$frameType len=${data.size}")
+            }
+            val manifest = themeReceiver.onFrame(json)
             if (manifest == null) {
-                // Mid-transfer — surface progress for the sync indicator.
                 val p = themeReceiver.progress()
                 handler.post { onThemeProgress?.invoke(p) }
                 return
