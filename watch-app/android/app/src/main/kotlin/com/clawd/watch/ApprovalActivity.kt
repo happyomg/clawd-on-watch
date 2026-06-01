@@ -168,15 +168,23 @@ class ApprovalActivity : AppCompatActivity() {
 
     private fun vibrate(risk: String) {
         val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-        val pattern = when (risk) {
-            "high" -> longArrayOf(0, 300, 100, 300, 100, 300)
-            "medium" -> longArrayOf(0, 200, 100, 200)
-            else -> longArrayOf(0, 100)
-        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1))
+            when (risk) {
+                "high" -> vibrator.vibrate(VibrationEffect.createWaveform(
+                    longArrayOf(0, 120, 60, 120, 60, 120),
+                    intArrayOf(0, 255, 0, 200, 0, 160), -1))
+                "medium" -> vibrator.vibrate(VibrationEffect.createWaveform(
+                    longArrayOf(0, 80, 50, 80),
+                    intArrayOf(0, 200, 0, 160), -1))
+                else -> vibrator.vibrate(VibrationEffect.createOneShot(60, 120))
+            }
         } else {
             @Suppress("DEPRECATION")
+            val pattern = when (risk) {
+                "high" -> longArrayOf(0, 120, 60, 120, 60, 120)
+                "medium" -> longArrayOf(0, 80, 50, 80)
+                else -> longArrayOf(0, 60)
+            }
             vibrator.vibrate(pattern, -1)
         }
     }

@@ -645,7 +645,7 @@ class BleService : Service() {
 
     @Suppress("DEPRECATION")
     private fun bringToForeground() {
-        vibrateNotification()
+        vibrateStateChange()
 
         // Try direct startActivity (works if SYSTEM_ALERT_WINDOW is granted)
         try {
@@ -738,19 +738,17 @@ class BleService : Service() {
             .build()
         getSystemService(NotificationManager::class.java)
             .notify(NOTIFICATION_ID, notification)
-
-        vibrateNotification()
     }
 
     // ── Notification / vibration ──
 
-    private fun vibrateNotification() {
+    private fun vibrateStateChange() {
         val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as android.os.Vibrator
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            vibrator.vibrate(android.os.VibrationEffect.createWaveform(longArrayOf(0, 200, 100, 200), -1))
+            vibrator.vibrate(android.os.VibrationEffect.createOneShot(40, 80))
         } else {
             @Suppress("DEPRECATION")
-            vibrator.vibrate(longArrayOf(0, 200, 100, 200), -1)
+            vibrator.vibrate(40)
         }
     }
 
