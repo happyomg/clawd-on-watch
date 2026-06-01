@@ -25,6 +25,7 @@ class ThemeReceiver(private val themesRoot: File) {
     @Synchronized fun reset() {
         name = ""; hash = ""; stateMap = null; chunks.clear()
         totalBytes = 0; receivedBytes = 0; files = emptyList(); completedFiles.clear()
+        skipChunks = false
     }
 
     /** Overall byte-level progress 0..1. */
@@ -44,20 +45,32 @@ class ThemeReceiver(private val themesRoot: File) {
     @Synchronized fun fileCount(): Int = files.size
 
     @Synchronized fun onFrame(json: JSONObject): ThemeManifest? = when (json.optString("t")) {
-        "manifest" -> { handleManifest(json); null }
-        "chunk" -> { handleChunk(json); null }
-        "done" -> handleDone(json)
+        "manifest" -> handleManifest(json)
+        "chunk" -> { if (!skipChunks) handleChunk(json); null }
+        "done" -> if (skipChunks) { skipChunks = false; null } else handleDone(json)
         else -> null
     }
 
-    private fun handleManifest(json: JSONObject) {
-        chunks.clear(); completedFiles.clear()
+    private var skipChunks = false
+
+    private fun handleManifest(json: JSONObject): ThemeManifest? {
+        chunks.clear(); completedFiles.clear(); skipChunks = false
         name = json.optString("name", ""); hash = json.optString("hash", "")
         stateMap = json.optJSONObject("stateMap")
         totalBytes = json.optLong("totalBytes", 0); receivedBytes = 0
         val filesArr = json.optJSONArray("files")
         files = if (filesArr != null) (0 until filesArr.length()).map { filesArr.getString(it) } else emptyList()
         Log.i(TAG, "manifest: $name ($hash), ${files.size} files, $totalBytes bytes")
+        // Cache hit: theme already exists locally → skip transfer, activate immediately
+        if (hash.isNotEmpty()) {
+            val cached = ThemeConfig.loadFromDir(java.io.File(themesRoot, hash))
+            if (cached != null) {
+                Log.i(TAG, "cache hit: $name ($hash) — skipping transfer")
+                skipChunks = true
+                return cached
+            }
+        }
+        return null
     }
 
     private fun handleChunk(json: JSONObject) {

@@ -103,6 +103,7 @@ class BleService : Service() {
     @Volatile private var advertiseRequested = false
     @Volatile var manualOffline = false
         private set
+    @Volatile private var lastActivateAttempt: String? = null
 
     // Connection watchdog: if the central disappears without sending an
     // LL_TERMINATE_IND (e.g. macOS CoreBluetooth cache), the watch stays
@@ -149,8 +150,12 @@ class BleService : Service() {
     var onConnectionStateChanged: ((Boolean) -> Unit)? = null
     var onPowerModeChanged: ((PowerManager.PowerMode) -> Unit)? = null
     var onBatteryLevelChanged: ((Int) -> Unit)? = null
-    /** Fired after theme transfer completes and becomes the active theme. */
+    /** Fired after theme transfer completes and becomes the active theme (needs frame recording). */
     var onThemeChanged: (() -> Unit)? = null
+    /** Fired when a cached theme is activated locally (no recording needed). */
+    var onThemeActivated: (() -> Unit)? = null
+    /** Fired when activate_theme fails (not cached) — UI should allow transfer progress. */
+    var onThemeActivateFailed: (() -> Unit)? = null
 
     data class ThemeSyncProgress(
         val fraction: Float,
@@ -564,6 +569,16 @@ class BleService : Service() {
                     cacheState(msg)
                     updateNotification(msg.state)
                     requestComplicationUpdate()
+                    // Auto-activate cached theme if Desktop switched
+                    val desktopTheme = msg.themeHash
+                    if (!desktopTheme.isNullOrEmpty()) {
+                        val activeHash = getSharedPreferences("clawd_state", Context.MODE_PRIVATE)
+                            .getString("active_theme_hash", null)
+                        if (desktopTheme != activeHash && desktopTheme != lastActivateAttempt) {
+                            lastActivateAttempt = desktopTheme
+                            handleActivateTheme(desktopTheme)
+                        }
+                    }
                     if (prev != null && prev.state != msg.state) {
                         bringToForeground()
                     }
@@ -608,13 +623,12 @@ class BleService : Service() {
                 .putString("active_theme_hash", hash)
                 .putString("prev_theme_hash", prev)
                 .apply()
-            handler.post {
-                onThemeProgress?.invoke(ThemeSyncProgress(1f, null, 0, 0))
-                onThemeChanged?.invoke()
-            }
+            lastActivateAttempt = null
+            handler.post { onThemeActivated?.invoke() }
             Log.i(TAG, "activate_theme: switched to cached $hash (${manifest.name})")
         } else {
-            Log.w(TAG, "activate_theme: $hash not in local cache, ignoring")
+            Log.w(TAG, "activate_theme: $hash not in local cache, allowing transfer")
+            handler.post { onThemeActivateFailed?.invoke() }
         }
     }
 
@@ -674,8 +688,9 @@ class BleService : Service() {
                 handler.post { onThemeProgress?.invoke(progress) }
                 return
             }
-            // Transfer complete — activate, persist (survives restarts), prune
-            // the cache, and re-render.
+            // Theme ready — either cache hit (manifest returned immediately)
+            // or full transfer complete (done frame assembled all chunks).
+            val isCacheHit = frameType == "manifest"
             val prefs = getSharedPreferences("clawd_state", Context.MODE_PRIVATE)
             val prev = prefs.getString("active_theme_hash", null)
             ThemeConfig.setActive(manifest)
@@ -685,14 +700,17 @@ class BleService : Service() {
                 .putString("active_theme_hash", manifest.hash)
                 .putString("prev_theme_hash", prev)
                 .apply()
-            // LRU eviction: protect current + bundled; rest evicted by age
             ThemeCache.cleanup(
                 themesRoot,
                 setOfNotNull(ThemeConfig.bundledClawd.hash, manifest.hash)
             )
-            handler.post {
-                onThemeProgress?.invoke(ThemeSyncProgress(1f, null, 0, 0))
-                onThemeChanged?.invoke()
+            if (isCacheHit) {
+                handler.post { onThemeActivated?.invoke() }
+            } else {
+                handler.post {
+                    onThemeProgress?.invoke(ThemeSyncProgress(1f, null, 0, 0))
+                    onThemeChanged?.invoke()
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Bad theme frame: ${e.message}")

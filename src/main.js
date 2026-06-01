@@ -307,7 +307,11 @@ const _settingsController = createSettingsController({
     },
     // Theme runtime is wired after theme-loader.init(); keep these closures
     // lazy so settings actions never capture a pre-init runtime reference.
-    activateTheme: (id, variantId, overrideMap) => themeRuntime.activateTheme(id, variantId, overrideMap),
+    activateTheme: (id, variantId, overrideMap) => {
+      const result = themeRuntime.activateTheme(id, variantId, overrideMap);
+      if (watchAdapter) watchAdapter.notifyStateChanged();
+      return result;
+    },
     refreshActiveThemeHitboxOverrides: (id, overrideMap) =>
       themeRuntime.refreshActiveThemeHitboxOverrides(id, overrideMap),
     getThemeInfo: (id) => themeRuntime.getThemeInfo(id),

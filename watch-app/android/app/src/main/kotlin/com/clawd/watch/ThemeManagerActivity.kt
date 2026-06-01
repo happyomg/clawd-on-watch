@@ -108,6 +108,7 @@ class ThemeManagerActivity : AppCompatActivity() {
         getSharedPreferences("clawd_state", Context.MODE_PRIVATE).edit()
             .putString("active_theme_hash", hash)
             .apply()
+        setResult(RESULT_OK)
         loadThemes()
     }
 

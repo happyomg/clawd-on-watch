@@ -50,6 +50,7 @@ class MainActivity : AppCompatActivity() {
     private var syncCompleteRunnable: Runnable? = null
 
     private var isSyncing = false
+    private var ignoreTransferProgress = false
 
     // Disconnect duration tracking
     private var disconnectedSince = 0L
@@ -75,6 +76,8 @@ class MainActivity : AppCompatActivity() {
             service.onConnectionStateChanged = { connected -> runOnUiThread { updateConnectionState(connected) } }
             service.onPowerModeChanged = { mode -> runOnUiThread { handlePowerModeChange(mode) } }
             service.onThemeChanged = { runOnUiThread { onThemeSynced() } }
+            service.onThemeActivated = { runOnUiThread { onThemeActivatedLocally() } }
+            service.onThemeActivateFailed = { runOnUiThread { ignoreTransferProgress = false } }
             service.onThemeProgress = { p -> runOnUiThread { showTransferProgress(p) } }
             service.onBatteryLevelChanged = { level -> runOnUiThread { updateBatteryWarning(level) } }
             petView.onRecordingChanged = { r -> runOnUiThread { onRecordingChanged(r) } }
@@ -141,6 +144,7 @@ class MainActivity : AppCompatActivity() {
         if (bound) {
             bleService?.onWatchMessage = null; bleService?.onConnectionStateChanged = null
             bleService?.onPowerModeChanged = null; bleService?.onThemeChanged = null
+            bleService?.onThemeActivated = null; bleService?.onThemeActivateFailed = null
             bleService?.onThemeProgress = null; bleService?.onBatteryLevelChanged = null
             petView.onRecordingChanged = null; petView.onRecordProgress = null
             unbindService(connection); bound = false
@@ -228,6 +232,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showTransferProgress(progress: BleService.ThemeSyncProgress) {
         if (progress.fraction >= 1f) return
+        if (ignoreTransferProgress) return
         enterSyncMode()
         val file = progress.currentFile ?: "..."
         connectionIndicator.text = "📥 Receiving theme"
@@ -237,12 +242,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onThemeSynced() {
+        ignoreTransferProgress = false
         enterSyncMode()
         connectionIndicator.text = "🎬 Preparing animations"
         stateChip.visibility = View.GONE
         petView.preRecordAll {
             runOnUiThread { exitSyncMode() }
         }
+    }
+
+    private fun onThemeActivatedLocally() {
+        isSyncing = false
+        ignoreTransferProgress = true
+        stateChip.visibility = View.GONE
+        cancelSyncCompleteTimer()
+        petView.reloadForThemeChange()
+        updateConnectionState(bleConnected)
     }
 
     @Suppress("UNUSED_PARAMETER")
@@ -420,7 +435,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openThemeManager() {
-        startActivity(Intent(this, ThemeManagerActivity::class.java))
+        @Suppress("DEPRECATION")
+        startActivityForResult(Intent(this, ThemeManagerActivity::class.java), 100)
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 100 && resultCode == RESULT_OK) {
+            petView.reloadForThemeChange()
+        }
     }
 
     private fun openSettings() {
