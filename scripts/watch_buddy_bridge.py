@@ -227,12 +227,17 @@ async def run(args):
                 return
             items = await scan_for_watch(args.name_prefix, timeout=args.scan_timeout)
             emit({"type": "devices", "items": items})
+            target = None
             for item in items:
                 if last_address and item["address"].lower() == last_address.lower():
-                    await connect_to(item["address"])
-                    return
-            if items:
-                await connect_to(items[0]["address"])
+                    target = item["address"]
+                    break
+            if not target and items:
+                target = items[0]["address"]
+            if target:
+                await connect_to(target)
+                if not client or not client.is_connected:
+                    await schedule_reconnect()
             else:
                 await schedule_reconnect()
         except Exception:
