@@ -1034,7 +1034,7 @@ const _permCtx = {
   },
 };
 const _perm = initPermission(_permCtx);
-const { showPermissionBubble, resolvePermissionEntry, sendPermissionResponse, repositionBubbles, permLog, PASSTHROUGH_TOOLS, addPendingPermission, removePendingPermission, maybeStartRemoteApproval, showCodexNotifyBubble, clearCodexNotifyBubbles, showKimiNotifyBubble, clearKimiNotifyBubbles, syncPermissionShortcuts, replyOpencodePermission } = _perm;
+const { showPermissionBubble, resolvePermissionEntry, sendPermissionResponse, repositionBubbles, permLog, PASSTHROUGH_TOOLS, addPendingPermission, removePendingPermission, maybeStartRemoteApproval, showCodexNotifyBubble, clearCodexNotifyBubbles, showKimiNotifyBubble, clearKimiNotifyBubbles, syncPermissionShortcuts, replyOpencodePermission, buildElicitationUpdatedInput } = _perm;
 const pendingPermissions = _perm.pendingPermissions;
 let permDebugLog = null; // set after app.whenReady()
 let updateDebugLog = null; // set after app.whenReady()
@@ -2324,12 +2324,9 @@ hardwareBuddyAdapter = createHardwareBuddyAdapter({
   getSettings: () => _settingsController.get("hardwareBuddy"),
   getSessionSnapshot: () => _state.buildSessionSnapshot(),
   getPendingPermissions: () => pendingPermissions.filter(
-    p => !p.isElicitation
-      && !p.isCodexNotify
+    p => !p.isCodexNotify
       && !p.isKimiNotify
       && !p.isHardwareBuddyTest
-      && p.toolName !== "ExitPlanMode"
-      && p.toolName !== "AskUserQuestion"
   ),
   getDoNotDisturb: () => doNotDisturb,
   isAgentEnabled: (agentId) => _isAgentEnabled({ agents: _settingsController.get("agents") }, agentId),
@@ -2408,12 +2405,9 @@ watchAdapter = createWatchAdapter({
     }
   },
   getPendingPermissions: () => pendingPermissions.filter(
-    p => !p.isElicitation
-      && !p.isCodexNotify
+    p => !p.isCodexNotify
       && !p.isKimiNotify
       && !p.isHardwareBuddyTest
-      && p.toolName !== "ExitPlanMode"
-      && p.toolName !== "AskUserQuestion"
   ),
   getDoNotDisturb: () => doNotDisturb,
   resolvePermissionEntry: (...args) => resolvePermissionEntry(...args),
