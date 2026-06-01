@@ -112,6 +112,10 @@ class MainActivity : AppCompatActivity() {
         connectionIndicator.text = if (connected) "Connected" else "Disconnected"
         connectionIndicator.setTextColor(if (connected) StateChipConfig.COLOR_INDICATOR_TEXT else StateChipConfig.COLOR_DISCONNECTED)
         petView.alpha = if (connected) 1.0f else 0.5f
+        if (!connected) {
+            petView.state = ClawdState.IDLE
+            updateStateChip(ClawdState.IDLE)
+        }
     }
 
     private fun updateStateChip(state: ClawdState) {
