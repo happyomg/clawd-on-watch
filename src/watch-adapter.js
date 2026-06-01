@@ -261,9 +261,13 @@ function createWatchAdapter(options = {}) {
       },
       onThemeSynced: (msg) => {
         themeSyncing = false;
-        if (msg && msg.hash) watchThemeHash = msg.hash;
-        log(`theme sync confirmed by bridge: ${msg && msg.hash} (${msg && msg.frames} frames)`);
-        // The desktop theme may have changed again during transfer — re-check.
+        const frames = (msg && msg.frames) || 0;
+        if (frames > 0 && msg.hash) {
+          watchThemeHash = msg.hash;
+        } else {
+          lastSyncedHash = null; // failed — allow retry
+        }
+        log(`theme sync confirmed: ${msg && msg.hash} (${frames} frames)`);
         maybeSyncTheme();
       },
       onApprovalResponse: (msg) => {
