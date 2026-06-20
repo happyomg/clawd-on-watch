@@ -624,8 +624,13 @@ class BleService : Service() {
                 .putString("prev_theme_hash", prev)
                 .apply()
             lastActivateAttempt = null
-            handler.post { onThemeActivated?.invoke() }
-            Log.i(TAG, "activate_theme: switched to cached $hash (${manifest.name})")
+            val hasFrames = ThemeCache.recordedStateCount(dir) >= manifest.files.size
+            if (hasFrames) {
+                handler.post { onThemeActivated?.invoke() }
+            } else {
+                handler.post { onThemeChanged?.invoke() }
+            }
+            Log.i(TAG, "activate_theme: switched to cached $hash (${manifest.name}), frames=${hasFrames}")
         } else {
             Log.w(TAG, "activate_theme: $hash not in local cache, allowing transfer")
             handler.post { onThemeActivateFailed?.invoke() }

@@ -99,7 +99,7 @@ async def scan_for_watch(name_prefix, timeout=10.0):
     return _filter_devices(devices_advs, name_prefix)
 
 
-async def read_stdin_lines(queue, on_eof=None):
+async def read_stdin_lines(queue, on_eof=None, priority_list=None):
     loop = asyncio.get_event_loop()
     reader = asyncio.StreamReader()
     await loop.connect_read_pipe(lambda: asyncio.StreamReaderProtocol(reader), sys.stdin)
@@ -111,11 +111,17 @@ async def read_stdin_lines(queue, on_eof=None):
             await queue.put(None)
             break
         text = line.decode("utf-8", errors="replace").strip()
-        if text:
-            try:
-                await queue.put(json.loads(text))
-            except json.JSONDecodeError:
-                pass
+        if not text:
+            continue
+        try:
+            msg = json.loads(text)
+        except json.JSONDecodeError:
+            continue
+        msg_type = msg.get("type", "") if isinstance(msg, dict) else ""
+        if priority_list is not None and msg_type == "snapshot" and not queue.empty():
+            priority_list.append(msg)
+        else:
+            await queue.put(msg)
 
 
 async def run(args):
@@ -130,12 +136,13 @@ async def run(args):
     current_op = None
     disconnect_event = asyncio.Event()
     stdin_queue = asyncio.Queue()
+    priority_snapshots = []
 
     def on_stdin_eof():
         nonlocal stopping
         stopping = True
 
-    stdin_task = asyncio.ensure_future(read_stdin_lines(stdin_queue, on_eof=on_stdin_eof))
+    stdin_task = asyncio.ensure_future(read_stdin_lines(stdin_queue, on_eof=on_stdin_eof, priority_list=priority_snapshots))
     stdin_task.add_done_callback(lambda t: t.exception() if not t.cancelled() and t.exception() else None)
 
     import signal
@@ -401,7 +408,7 @@ async def run(args):
             last_snapshot_data = data.encode("utf-8")
             if client and client.is_connected:
                 try:
-                    await do_gatt(client.write_gatt_char(CWD1_STATE, last_snapshot_data))
+                    await do_gatt(client.write_gatt_char(CWD1_STATE, last_snapshot_data, response=True))
                 except asyncio.CancelledError:
                     pass
                 except Exception:
@@ -420,9 +427,18 @@ async def run(args):
                     await force_disconnect()
 
         elif msg_type == "theme_frame":
-            # Write each theme frame immediately via CWD1 (with response for
-            # reliability). Each frame is small (~500B), and response=True
-            # provides back-pressure without flooding.
+            # Flush priority snapshots before writing theme frames so state
+            # updates (including theme-hash changes) are never blocked behind
+            # a long theme transfer.
+            while priority_snapshots and client and client.is_connected:
+                snap = priority_snapshots.pop(0)
+                s_payload = snap.get("payload", snap)
+                s_data = json.dumps(s_payload, ensure_ascii=False, separators=(",", ":"))
+                last_snapshot_data = s_data.encode("utf-8")
+                try:
+                    await client.write_gatt_char(CWD1_STATE, last_snapshot_data, response=True)
+                except Exception:
+                    pass
             if client and client.is_connected:
                 fr = {k: v for k, v in msg.items() if k != "type"}
                 payload = json.dumps(fr, ensure_ascii=False, separators=(",", ":"))
